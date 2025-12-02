@@ -1,0 +1,13 @@
+importante usar:
+python -m pip install --force-reinstall pip
+cuando el ordenador no es de la ua
+
+usar: sudo docker compose up -d 
+
+
+topics: 
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic solicitudes_driver --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic respuestas_central --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic peticiones_carga --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic tickets_cp --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic peticiones_engine --partitions 1 --replication-factor 1
