@@ -5,6 +5,39 @@ import time
 import os
 import pprint
 from confluent_kafka import Producer, Consumer, KafkaError
+import base64
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+
+
+# ============================================================
+# Configuración de Seguridad (AES-GCM)
+# ============================================================
+# Esta clave debe ser SECRETA y la misma en Central y Monitor.
+# Aquí usamos una hardcodeada para el ejemplo (32 bytes en hex).
+AES_KEY_HEX = '4afb208ed9eb14c124c61f4c69ae67293126dd26e7c0d6ea45ca052ceec6557d'
+AES_KEY = bytes.fromhex(AES_KEY_HEX)
+aesgcm = AESGCM(AES_KEY)
+
+def encriptar_mensaje(diccionario):
+    """Convierte dict -> JSON bytes -> AES Encrypt -> Base64 string"""
+    data_bytes = json.dumps(diccionario).encode('utf-8')
+    nonce = os.urandom(12)  # El nonce debe ser único por mensaje
+    ciphertext = aesgcm.encrypt(nonce, data_bytes, None)
+    # Concatenamos nonce + ciphertext y lo pasamos a base64 para enviarlo como texto
+    return base64.b64encode(nonce + ciphertext).decode('utf-8')
+
+def desencriptar_mensaje(b64_str):
+    """Base64 string -> AES Decrypt -> JSON bytes -> dict"""
+    try:
+        data = base64.b64decode(b64_str)
+        nonce = data[:12]      # Extraemos los primeros 12 bytes (nonce)
+        ciphertext = data[12:] # El resto es el mensaje cifrado
+        original_bytes = aesgcm.decrypt(nonce, ciphertext, None)
+        return json.loads(original_bytes.decode('utf-8'))
+    except Exception as e:
+        print(f"[Crypto] Error desencriptando: {e}")
+        return None
 
 # ============================================================
 # Configuración global
@@ -78,9 +111,14 @@ def manejar_estado_cp(conn, addr):
                 break
             buffer += data.decode()
             while '\n' in buffer:
-                mensaje, buffer = buffer.split('\n', 1)
+                mensaje_b64, buffer = buffer.split('\n', 1) # Recibimos B64
+                if not mensaje_b64.strip(): continue
+                
+                # --- CAMBIO AQUÍ: Desencriptar ---
+                state = desencriptar_mensaje(mensaje_b64)
+                if state is None:
+                    continue # Si falla la desencriptación, ignoramos
                 try:
-                    state = json.loads(mensaje)
                     cp_id = state.get('cp_id')
                     if not cp_id:
                         continue
@@ -129,9 +167,16 @@ def enviar_orden(cp_id, action):
 
     try:
         with socket.create_connection((info['ip'], info['cmd_port']), timeout=3) as s:
-            s.sendall(json.dumps({'cp_id': cp_id, 'action': action}).encode('utf-8'))
-            resp = s.recv(1024)
-            print(f"[Central] Respuesta de {cp_id}: {resp.decode('utf-8')}")
+            # --- CAMBIO AQUÍ: Encriptar envío ---
+            payload = {'cp_id': cp_id, 'action': action}
+            msg_encriptado = encriptar_mensaje(payload)
+            s.sendall((msg_encriptado + '\n').encode('utf-8')) # Importante añadir \n
+            # ------------------------------------
+
+            # Esperar respuesta (ACK) que también vendrá encriptada
+            resp_b64 = s.recv(1024)
+            resp_dict = desencriptar_mensaje(resp_b64.decode('utf-8'))
+            print(f"[Central] Respuesta de {cp_id}: {resp_dict}")
     except Exception as e:
         print(f"[Central] Error al enviar orden a {cp_id}: {e}")
 

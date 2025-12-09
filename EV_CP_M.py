@@ -3,6 +3,41 @@ import json
 import sys
 import time
 import threading
+import base64
+import os
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+
+
+# ============================================================
+# Configuración de Seguridad (AES-GCM)
+# ============================================================
+# Esta clave debe ser SECRETA y la misma en Central y Monitor.
+# Aquí usamos una hardcodeada para el ejemplo (32 bytes en hex).
+AES_KEY_HEX = '4afb208ed9eb14c124c61f4c69ae67293126dd26e7c0d6ea45ca052ceec6557d'
+AES_KEY = bytes.fromhex(AES_KEY_HEX)
+aesgcm = AESGCM(AES_KEY)
+
+def encriptar_mensaje(diccionario):
+    """Convierte dict -> JSON bytes -> AES Encrypt -> Base64 string"""
+    data_bytes = json.dumps(diccionario).encode('utf-8')
+    nonce = os.urandom(12)  # El nonce debe ser único por mensaje
+    ciphertext = aesgcm.encrypt(nonce, data_bytes, None)
+    # Concatenamos nonce + ciphertext y lo pasamos a base64 para enviarlo como texto
+    return base64.b64encode(nonce + ciphertext).decode('utf-8')
+
+def desencriptar_mensaje(b64_str):
+    """Base64 string -> AES Decrypt -> JSON bytes -> dict"""
+    try:
+        data = base64.b64decode(b64_str)
+        nonce = data[:12]      # Extraemos los primeros 12 bytes (nonce)
+        ciphertext = data[12:] # El resto es el mensaje cifrado
+        original_bytes = aesgcm.decrypt(nonce, ciphertext, None)
+        return json.loads(original_bytes.decode('utf-8'))
+    except Exception as e:
+        print(f"[Crypto] Error desencriptando: {e}")
+        return None
+
 
 # ============================================================
 # Validación de argumentos
@@ -118,11 +153,14 @@ def obtener_estado_engine() -> dict:
 def enviar_a_central(estado: dict):
     try:
         with socket.create_connection((CENTRAL_HOST, CENTRAL_PORT_ESTADOS), timeout=SOCKET_TIMEOUT) as s:
-            msg = json.dumps(estado) + '\n'
-            s.sendall(msg.encode('utf-8'))
+            # --- CAMBIO AQUÍ ---
+            msg_encrypted = encriptar_mensaje(estado)
+            msg_final = msg_encrypted + '\n'
+            print(f"[Monitor {CP_ID}] Enviando estado encriptado a Central \n {msg_final}")
+            s.sendall(msg_final.encode('utf-8'))
+            # -------------------
     except Exception as e:
         print(f"[Monitor {CP_ID}] Error al enviar a CENTRAL: {e}")
-
 
 # ============================================================
 # Recepción de comandos de la Central
@@ -135,7 +173,11 @@ def manejar_comando_central(conn: socket.socket, addr):
             if not data:
                 return
 
-            msg = json.loads(data.decode('utf-8'))
+            # Nota: Asumimos que data llega completa o usamos buffer como en Central
+            # Para simplificar, si el mensaje es corto:
+            msg = desencriptar_mensaje(data.decode('utf-8').strip())
+            if msg is None: return
+
             action = (msg.get('action', '') or '').lower()
             cp = msg.get('cp_id') or CP_ID
             print(f"[Monitor {CP_ID}] Orden de Central para {cp}: {action}")
@@ -146,12 +188,14 @@ def manejar_comando_central(conn: socket.socket, addr):
                 central_override = 'sleep'
             elif action in ('clear', 'none', ''):
                 central_override = None
-            # Otros comandos se ignoran pero se responde igual
 
-            conn.sendall(json.dumps({
+            # --- CAMBIO AQUÍ: Encriptar la respuesta (ACK) ---
+            respuesta = {
                 'status': 'ok',
                 'central_override': central_override
-            }).encode('utf-8'))
+            }
+            conn.sendall(encriptar_mensaje(respuesta).encode('utf-8'))
+            # -------------------------------------------------
 
         except Exception as e:
             print(f"[Monitor {CP_ID}] Error manejando comando Central: {e}")
