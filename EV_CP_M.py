@@ -44,7 +44,7 @@ def desencriptar_mensaje(b64_str):
 # ============================================================
 if len(sys.argv) != 6:
     print("Uso: python EV_CP_M.py <cp_id> <engine_host> <engine_port> <central_host> <cmd_port>")
-    print("Ej: python EV_CP_M.py CP01 127.0.0.1 5000 192.168.0.100 6002")
+    print("Ej: python EV_CP_M.py CP01 127.0.0.1 5000 127.0.0.1 6002")
     sys.exit(1)
 
 CP_ID = sys.argv[1]

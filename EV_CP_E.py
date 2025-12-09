@@ -22,8 +22,8 @@ except Exception:
 # Validación de parámetros de entrada
 # ============================================================
 if len(sys.argv) != 4:
-    print("Uso: python EV_CP_E.py <cp_id> <monitor_port> <central_host>")
-    print("Ejemplo: python EV_CP_E.py CP01 5000 127.0.0.1 6001")
+    print("Uso: python EV_CP_E.py <cp_id> <monitor_port>")
+    print("Ejemplo: python EV_CP_E.py CP01 5000 127.0.0.1")
     sys.exit(1)
 
 CP_ID = sys.argv[1]
