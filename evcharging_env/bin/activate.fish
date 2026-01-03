@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/oskin/Escritorio/EVCharging/evcharging_env
+set -gx VIRTUAL_ENV /home/gerardo/EVCharging/evcharging_env
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
