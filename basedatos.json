@@ -6,8 +6,18 @@
       "estado": "ACTIVO",
       "healthy": true,
       "in_use": false,
-      "ip": "192.168.18.67",
-      "cmd_port": 6002
+      "ip": "127.0.0.1",
+      "cmd_port": 6002,
+      "token": "0d46633c270ae8f6"
+    },
+    "CP02": {
+      "ubicacion": "Desconocida",
+      "estado": "ACTIVO",
+      "healthy": true,
+      "fecha_registro": "2026-01-05T17:46:18.235712",
+      "token": "019b503e9aaa370b",
+      "ip": "127.0.0.1",
+      "ultimo_inicio": "2026-01-05T17:46:18.235728"
     }
   },
   "drivers": {},

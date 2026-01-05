@@ -5,9 +5,26 @@ import time
 import threading
 import base64
 import os
+import requests
+import urllib3
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# ============================================================
+# Validación de argumentos
+# ============================================================
+if len(sys.argv) < 6:
+    print("Uso: python EV_CP_M.py <cp_id> <engine_host> <engine_port> <central_host> <cmd_port> <IP_registry>")
+    print("Ej: python EV_CP_M.py CP01 127.0.0.1 5000 127.0.0.1 6002")
+    sys.exit(1)
 
-
+CP_ID = sys.argv[1]
+ENGINE_HOST = sys.argv[2]
+ENGINE_PORT = int(sys.argv[3])
+CENTRAL_HOST = sys.argv[4]
+CENTRAL_PORT_ESTADOS = 6000
+MONITOR_CMD_PORT = int(sys.argv[5])
+REGISTRY_HOST = sys.argv[6] if len(sys.argv) > 6 else "127.0.0.1"
+REGISTRY_URL = f"https://{REGISTRY_HOST}:8080"
 
 # ============================================================
 # Configuración de Seguridad (AES-GCM)
@@ -40,21 +57,6 @@ def desencriptar_mensaje(b64_str):
 
 
 # ============================================================
-# Validación de argumentos
-# ============================================================
-if len(sys.argv) != 6:
-    print("Uso: python EV_CP_M.py <cp_id> <engine_host> <engine_port> <central_host> <cmd_port>")
-    print("Ej: python EV_CP_M.py CP01 127.0.0.1 5000 127.0.0.1 6002")
-    sys.exit(1)
-
-CP_ID = sys.argv[1]
-ENGINE_HOST = sys.argv[2]
-ENGINE_PORT = int(sys.argv[3])
-CENTRAL_HOST = sys.argv[4]
-CENTRAL_PORT_ESTADOS = 6000
-MONITOR_CMD_PORT = int(sys.argv[5])
-
-# ============================================================
 # Constantes y estado global
 # ============================================================
 SOCKET_TIMEOUT = 2
@@ -78,6 +80,25 @@ def obtener_ip_local() -> str:
     except Exception:
         return "127.0.0.1"
 
+# ============================================================
+# Registro (Obtener el Token)
+# ============================================================
+def obtener_credenciales():
+    global SESSION_TOKEN
+    print(f"[Monitor] Conectando a Registry ({REGISTRY_URL})...")
+    try:
+        resp = requests.post(f"{REGISTRY_URL}/register", json={"cp_id": CP_ID}, verify=False, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            SESSION_TOKEN = data.get('token') # Guardamos la contraseña
+            print(f"[Monitor] Login correcto. Token recibido: {SESSION_TOKEN}")
+            return True
+        else:
+            print(f"[Monitor] Error registro: {resp.text}")
+            return False
+    except Exception as e:
+        print(f"[Monitor] Fallo conexión Registry: {e}")
+        return False
 
 # ============================================================
 # Comunicación con el Engine
@@ -221,6 +242,10 @@ def servidor_comandos():
 # Bucle principal
 # ============================================================
 def main():
+    if not obtener_credenciales():
+        print("No se puede iniciar sin token del Registry.")
+        sys.exit(1)
+
     print(f"[Monitor {CP_ID}] Iniciado con central_override={central_override}")
     threading.Thread(target=servidor_comandos, daemon=True).start()
 

@@ -1,0 +1,19 @@
+pip installs:
+pip install flask requests
+pip install cryptography
+
+Usar para el compose:
+docker compose up -d
+
+luego para kafka : 
+docker compose exec kafka bash
+
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic solicitudes_driver --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic respuestas_central --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic peticiones_carga --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic tickets_cp --partitions 1 --replication-factor 1
+./kafka-topics.sh --bootstrap-server kafka:29092 --create --topic peticiones_engine --partitions 1 --replication-factor 1
+
+SI da fallo kafka reinstalamos de 0 por si esta corrupto:
+pip install --force-reinstall --no-cache-dir confluent-kafka
+
