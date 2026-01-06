@@ -17,7 +17,20 @@
       "fecha_registro": "2026-01-05T17:46:18.235712",
       "token": "019b503e9aaa370b",
       "ip": "127.0.0.1",
-      "ultimo_inicio": "2026-01-05T17:46:18.235728"
+      "ultimo_inicio": "2026-01-05T17:46:18.235728",
+      "in_use": null,
+      "cmd_port": null
+    },
+    "CP03": {
+      "ubicacion": "Desconocida",
+      "estado": "DESCONECTADO",
+      "healthy": false,
+      "fecha_registro": "2026-01-06T21:45:07.598581",
+      "token": "36176c9ef9fd2",
+      "ip": "172.24.175.165",
+      "ultimo_inicio": "2026-01-06T21:50:17.647531",
+      "in_use": false,
+      "cmd_port": 6002
     }
   },
   "drivers": {},

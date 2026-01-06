@@ -44,6 +44,8 @@ def desencriptar_mensaje(b64_str):
 # ============================================================
 # Configuración global
 # ============================================================
+DB_FILE = 'basedatos.json'
+
 CENTRAL_HOST = 'localhost'
 CENTRAL_PORT_ESTADOS = 6000
 CENTRAL_PORT_SOLICITUDES = 6001
@@ -97,32 +99,42 @@ def cargar_cps_basedatos():
         return {}
 
 
-def guardar_cps_basedatos(data_cps):
-    """Guarda los CPs manteniendo el resto de información intacta"""
+def guardar_cps_basedatos(estados_en_memoria):
+    archivo = 'basedatos.json'
+    
+    # 1. LEER: Cargamos lo que ya hay en el disco (incluyendo fechas y tokens)
+    if not os.path.exists(archivo):
+        db_disco = {"cps": {}}
+    else:
+        try:
+            with open(archivo, 'r') as f:
+                db_disco = json.load(f)
+        except Exception:
+            db_disco = {"cps": {}}
+
+    # 2. ACTUALIZAR: Modificamos SOLO los campos que cambian en tiempo real
+    #    sin tocar 'fecha_registro', 'ultimo_inicio' o 'token' si no es necesario.
+    for cp_id, datos_memoria in estados_en_memoria.items():
+        
+        # Si el CP no existe en el archivo
+        if cp_id not in db_disco['cps']:
+            db_disco['cps'][cp_id] = datos_memoria
+        else:
+            cp_disco = db_disco['cps'][cp_id]
+            
+            # Actualizamos SOLO lo que gestiona la Central
+            cp_disco['estado'] = datos_memoria.get('estado')
+            cp_disco['healthy'] = datos_memoria.get('healthy')
+            cp_disco['in_use'] = datos_memoria.get('in_use')
+            cp_disco['ip'] = datos_memoria.get('ip')
+            cp_disco['cmd_port'] = datos_memoria.get('cmd_port')
+
+    # 3. GUARDAR: Escribimos la fusión de datos
     try:
-        # Leer toda la base de datos
-        if os.path.exists(FICHERO_BASE_DATOS):
-            with open(FICHERO_BASE_DATOS, "r") as f:
-                data_completa = json.load(f)
-        else:
-            data_completa = {
-                'cps': {},
-                'drivers': {},
-                'transacciones': [],
-                'alertas_climaticas': {}
-            }
-        
-        # Si data_cps es solo el dict de CPs, actualizamos solo esa sección
-        if isinstance(data_cps, dict) and not any(k in data_cps for k in ['drivers', 'transacciones', 'alertas_climaticas']):
-            data_completa['cps'] = data_cps
-        else:
-            # Si es la estructura completa, guardamos todo
-            data_completa = data_cps
-        
-        with open(FICHERO_BASE_DATOS, "w") as f:
-            json.dump(data_completa, f, indent=2)
+        with open(archivo, 'w') as f:
+            json.dump(db_disco, f, indent=2)
     except Exception as e:
-        print(f"[Central] Error al guardar base de datos: {e}")
+        print(f"[Central] Error escribiendo en disco: {e}")
 
 
 def actualizar_drivers(driver_id, estado):
@@ -173,7 +185,37 @@ def actualizar_transacciones(driver_id, cp_id, accion='inicio'):
     except Exception as e:
         print(f"[Central] Error al actualizar transacciones: {e}")
 
-
+# ============================================================
+# Funcion auxiliar: validar credenciales de un CP
+# ============================================================
+def validar_credenciales(cp_id, token_recibido):
+    """
+    Comprueba en basedatos.json si el CP existe y si el token coincide.
+    Retorna True si es válido, False si es un impostor.
+    """
+    if not os.path.exists(DB_FILE):
+        return False # Si no hay base de datos, nadie es válido
+        
+    try:
+        with open(DB_FILE, 'r') as f:
+            db = json.load(f)
+            
+        # 1. ¿Existe el CP en la base de datos?
+        if cp_id not in db.get('cps', {}):
+            return False
+            
+        # 2. ¿El token almacenado coincide con el recibido?
+        token_real = db['cps'][cp_id].get('token')
+        
+        # Comparamos (usando strings para evitar errores de None)
+        if str(token_real) == str(token_recibido):
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        print(f"[Central] Error leyendo BBDD para validar: {e}")
+        return False
 # ============================================================
 # INICIAR API_CENTRAL AUTOMÁTICAMENTE
 # ============================================================
@@ -249,8 +291,14 @@ def manejar_estado_cp(conn, addr):
                 state = desencriptar_mensaje(mensaje_b64)
                 if state is None:
                     continue # Si falla la desencriptación, ignoramos
+                cp_id = state.get('cp_id')
+                if not validar_credenciales(cp_id,state.get('token')):
+                    print(f"[Central] Intento de conexión no autorizado desde {addr} \n Credenciales recibidas: \ncp_id={cp_id} \ntoken={state.get('token')}")
+                    conn.close()
+                    enviar_orden(state.get('cp_id'), 'ErrorLog')  # Ordenar al CP que se desconecte
+                    return
                 try:
-                    cp_id = state.get('cp_id')
+
                     if not cp_id:
                         continue
                     with lock_estados:
@@ -262,6 +310,7 @@ def manejar_estado_cp(conn, addr):
                                 "estado": "DESCONECTADO",
                                 "healthy": False,
                                 "in_use": False,
+                                "token": '00000'
                             }
 
                         estados_cp[cp_id]['estado'] = "ACTIVO" if state.get('healthy', False) else "DESCONECTADO"
@@ -269,7 +318,8 @@ def manejar_estado_cp(conn, addr):
                         estados_cp[cp_id]['in_use'] = state.get('in_use', False)
                         estados_cp[cp_id]['ip'] = state.get('ip', addr[0])
                         estados_cp[cp_id]['cmd_port'] = state.get('cmd_port')
-                        guardar_cps_basedatos(estados_cp)
+                        estados_cp[cp_id]['token'] = state.get('token')
+                        guardar_cps_basedatos(estados_cp)   
                 except Exception as e:
                     print(f"[Central] Error procesando estado: {e}")
 

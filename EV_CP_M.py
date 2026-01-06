@@ -148,7 +148,8 @@ def obtener_estado_engine() -> dict:
                 'cp_id': CP_ID,
                 'action_sent': action_to_send,
                 'central_override': central_override,
-                'override_deferred': deferred
+                'override_deferred': deferred,
+                'token': SESSION_TOKEN,
             })
             return estado
 
@@ -164,7 +165,8 @@ def obtener_estado_engine() -> dict:
             'active': central_override != 'sleep',
             'action_sent': 'none',
             'central_override': central_override,
-            'override_deferred': False
+            'override_deferred': False,
+            'token': SESSION_TOKEN,
         }
 
 
@@ -177,7 +179,7 @@ def enviar_a_central(estado: dict):
             # --- CAMBIO AQUÍ ---
             msg_encrypted = encriptar_mensaje(estado)
             msg_final = msg_encrypted + '\n'
-            print(f"[Monitor {CP_ID}] Enviando estado encriptado a Central \n {msg_final}")
+            print(f"[Monitor {CP_ID}] Enviando estado encriptado a Central")
             s.sendall(msg_final.encode('utf-8'))
             # -------------------
     except Exception as e:
@@ -205,12 +207,15 @@ def manejar_comando_central(conn: socket.socket, addr):
 
             if action == 'activate':
                 central_override = 'activate'
+            elif action =='errorlog':
+                print(f"[Monitor {CP_ID}] Error en la validacion. Durmiendo el CP.")
+                central_override = 'sleep'
             elif action in ('sleep', 'off'):
                 central_override = 'sleep'
             elif action in ('clear', 'none', ''):
                 central_override = None
 
-            # --- CAMBIO AQUÍ: Encriptar la respuesta (ACK) ---
+            # Encriptar la respuesta (ACK)
             respuesta = {
                 'status': 'ok',
                 'central_override': central_override
@@ -245,6 +250,7 @@ def main():
     if not obtener_credenciales():
         print("No se puede iniciar sin token del Registry.")
         sys.exit(1)
+
 
     print(f"[Monitor {CP_ID}] Iniciado con central_override={central_override}")
     threading.Thread(target=servidor_comandos, daemon=True).start()
