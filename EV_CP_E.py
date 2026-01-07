@@ -43,7 +43,7 @@ evento_menu_detener = threading.Event()
 # ============================================================
 # Configuración de Kafka
 # ============================================================
-KAFKA_BROKER = '172.21.243.93:9092'
+KAFKA_BROKER = 'localhost:9092'
 TOPIC_SOLICITUD = 'peticiones_engine'
 TOPIC_RESPUESTA = 'respuestas_central'
 TOPIC_TELEMETRIA = 'telemetry_cp'
