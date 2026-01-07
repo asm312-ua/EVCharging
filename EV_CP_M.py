@@ -14,7 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ============================================================
 if len(sys.argv) < 6:
     print("Uso: python EV_CP_M.py <cp_id> <engine_host> <engine_port> <central_host> <cmd_port> <IP_registry>")
-    print("Ej: python EV_CP_M.py CP01 127.0.0.1 5000 127.0.0.1 6002")
+    print("Ej: python EV_CP_M.py CP01 127.0.0.1 5000 127.0.0.1 6002 127.0.0.1")
     sys.exit(1)
 
 CP_ID = sys.argv[1]
