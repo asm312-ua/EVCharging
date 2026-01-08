@@ -190,41 +190,61 @@ def enviar_a_central(estado: dict):
 # ============================================================
 def manejar_comando_central(conn: socket.socket, addr):
     global central_override
+    
+    # Buffer para acumular datos si llegan fragmentados
+    buffer = ''
+    
     with conn:
-        try:
-            data = conn.recv(SOCKET_BUFFER)
-            if not data:
-                return
+        while True:
+            try:
+                data = conn.recv(SOCKET_BUFFER)
+                if not data:
+                    break
+                buffer += data.decode('utf-8')
+                
+                # Procesamos MIENTRAS haya saltos de línea en el buffer
+                while '\n' in buffer:
+                    mensaje_b64, buffer = buffer.split('\n', 1)
+                    mensaje_b64 = mensaje_b64.strip()
+                    
+                    if not mensaje_b64: continue
 
-            # Nota: Asumimos que data llega completa o usamos buffer como en Central
-            # Para simplificar, si el mensaje es corto:
-            msg = desencriptar_mensaje(data.decode('utf-8').strip())
-            if msg is None: return
+                    # 1. Desencriptar
+                    msg = desencriptar_mensaje(mensaje_b64)
+                    
+                    if msg is None:
+                        print(f"[Monitor {CP_ID}] Error: Recibido mensaje indescifrable.")
+                        continue # Saltamos al siguiente mensaje
 
-            action = (msg.get('action', '') or '').lower()
-            cp = msg.get('cp_id') or CP_ID
-            print(f"[Monitor {CP_ID}] Orden de Central para {cp}: {action}")
+                    # 2. Procesar Orden
+                    action = (msg.get('action', '') or '').lower()
+                    cp = msg.get('cp_id') or CP_ID
+                    print(f"[Monitor {CP_ID}] Orden recibida: '{action}'")
 
-            if action == 'activate':
-                central_override = 'activate'
-            elif action =='errorlog':
-                print(f"[Monitor {CP_ID}] Error en la validacion. Durmiendo el CP.")
-                central_override = 'sleep'
-            elif action in ('sleep', 'off'):
-                central_override = 'sleep'
-            elif action in ('clear', 'none', ''):
-                central_override = None
+                    if action == 'activate':
+                        central_override = 'activate'
+                    elif action == 'errorlog':
+                        print(f"[Monitor {CP_ID}] Error Auth. Durmiendo...")
+                        central_override = 'sleep'
+                    elif action in ('sleep', 'off'):
+                        central_override = 'sleep'
+                    elif action in ('clear', 'none', ''):
+                        central_override = None
 
-            # Encriptar la respuesta (ACK)
-            respuesta = {
-                'status': 'ok',
-                'central_override': central_override
-            }
-            conn.sendall(encriptar_mensaje(respuesta).encode('utf-8'))
-            # -------------------------------------------------
+                    # 3. Enviar Respuesta (ACK)
+                    # ¡IMPORTANTE! Añadimos '\n' al final para que Central sepa dónde acaba
+                    respuesta = {
+                        'status': 'ok',
+                        'central_override': central_override
+                    }
+                    ack_encriptado = encriptar_mensaje(respuesta)
+                    conn.sendall((ack_encriptado + '\n').encode('utf-8'))
+                    
+                    return # Salimos tras procesar la orden y responder
 
-        except Exception as e:
-            print(f"[Monitor {CP_ID}] Error manejando comando Central: {e}")
+            except Exception as e:
+                print(f"[Monitor {CP_ID}] Error en socket comandos: {e}")
+                break
 
 
 def servidor_comandos():

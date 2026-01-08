@@ -150,13 +150,30 @@ def cargar_cps_basedatos():
         return {}
 
 
-def guardar_datos_completos(data_completa):
-    """Guarda la estructura completa de la BD"""
+def guardar_datos():
+    """Guarda haciendo MERGE para no borrar campos de otros procesos"""
     try:
-        with open(FICHERO_BASE_DATOS, "w") as f:
-            json.dump(data_completa, f, indent=2)
+        # 1. Leer lo que hay en disco actualmente
+        datos_disco = {}
+        if os.path.exists(FICHERO_BASE_DATOS):
+            with open(FICHERO_BASE_DATOS, 'r') as f:
+                datos_disco = json.load(f)
+
+        # 2. Actualizar con lo que tenemos en memoria (API)
+        #    Esto preserva 'auditoria', 'tokens' y campos que el API no toca.
+        datos_disco['cps'].update(estado_sistema.get('cps', {}))
+        datos_disco['drivers'] = estado_sistema.get('drivers', {})
+        datos_disco['transacciones'] = estado_sistema.get('transacciones', [])
+        datos_disco['alertas_climaticas'] = estado_sistema.get('alertas_climaticas', {})
+        
+        # NOTA: No tocamos 'auditoria' aquí, así que se queda como está en el disco.
+
+        # 3. Guardar todo
+        with open(FICHERO_BASE_DATOS, 'w') as f:
+            json.dump(datos_disco, f, indent=2)
+            
     except Exception as e:
-        print(f"[Central] Error al guardar BD: {e}")
+        print(f"[API_Central] Error al guardar datos: {e}")
 
 
 def guardar_cps_basedatos(estados_en_memoria):
@@ -516,102 +533,144 @@ def servidor_estados_cp():
 # Enviar órdenes a un CP (por socket)
 # ============================================================
 def enviar_orden(cp_id, action):
+    # Obtener IP/Puerto de memoria
     with lock_estados:
         info = estados_cp.get(cp_id)
+    
     if not info:
         print(f"[Central] No se conoce el CP {cp_id}")
-        registrar_auditoria('localhost', 'ERROR_CP_DESCONOCIDO', f'Intento de enviar orden a CP desconocido: {cp_id}')
         return
 
     try:
+        # Conectar con timeout de 3 segundos
         with socket.create_connection((info['ip'], info['cmd_port']), timeout=3) as s:
-            # --- CAMBIO AQUÍ: Encriptar envío ---
+            
+            # 1. Enviar Orden Encriptada + \n
             payload = {'cp_id': cp_id, 'action': action}
             msg_encriptado = encriptar_mensaje(payload)
-            s.sendall((msg_encriptado + '\n').encode('utf-8')) # Importante añadir \n
-            # ------------------------------------
+            s.sendall((msg_encriptado + '\n').encode('utf-8'))
+            
+            print(f"[Central] → Enviado '{action}' a {cp_id}")
 
-            # Esperar respuesta (ACK) que también vendrá encriptada
-            resp_b64 = s.recv(1024)
-            resp_dict = desencriptar_mensaje(resp_b64.decode('utf-8'))
-            print(f"[Central] Respuesta de {cp_id}: {resp_dict}")
+            # 2. Recibir Confirmación (ACK) hasta encontrar \n
+            buffer_ack = ''
+            while True:
+                chunk = s.recv(1024)
+                if not chunk: break
+                buffer_ack += chunk.decode('utf-8')
+                
+                if '\n' in buffer_ack:
+                    ack_b64, _ = buffer_ack.split('\n', 1)
+                    ack_dict = desencriptar_mensaje(ack_b64)
+                    
+                    if ack_dict:
+                        print(f"[Central] ← ACK de {cp_id}: {ack_dict.get('status')} (Override: {ack_dict.get('central_override')})")
+                    else:
+                        print(f"[Central] ACK corrupto de {cp_id}")
+                    break # Ya tenemos respuesta, salimos
+
+    except socket.timeout:
+        print(f"[Central] Timeout esperando respuesta de {cp_id}")
+    except ConnectionRefusedError:
+        print(f"[Central] {cp_id} rechazó la conexión (¿Monitor apagado?)")
     except Exception as e:
-        print(f"[Central] Error al enviar orden a {cp_id}: {e}")
-        registrar_auditoria(info.get('ip', 'unknown'), 'ERROR_ENVIO_ORDEN', f'Error enviando orden a {cp_id}: {e}')
+        print(f"[Central] Error enviando orden a {cp_id}: {e}")
+        registrar_auditoria(info.get('ip', 'unknown'), 'ERROR_ENVIO_ORDEN', f'Fallo al enviar {action}: {e}')
 
 
 # ============================================================
 # VERIFICADOR DE ALERTAS CLIMÁTICAS
 # ============================================================
 def verificar_alertas_climaticas():
-    """Verifica alertas y pone CPs fuera de servicio"""
+    """Verifica alertas y gestiona los CPs de forma eficiente (sin bloquear)"""
     try:
+        # 1. Leemos alertas del disco (Lectura es rápida)
+        if not os.path.exists(FICHERO_BASE_DATOS): return
         with open(FICHERO_BASE_DATOS, "r") as f:
             data = json.load(f)
         
         alertas = data.get('alertas_climaticas', {})
         
+        # Listas para acumular tareas de red (para hacerlas FUERA del lock)
+        ordenes_sleep = []
+        ordenes_activate = []
+        auditorias_pendientes = []
+        cambios_en_memoria = False
+
+        # 2. BLOQUE CRÍTICO: Solo operaciones de memoria (Rapidísimo)
         with lock_estados:
-            # PASO 1: Verificar CPs que deben ponerse fuera de servicio
+            
+            # A) Verificar ACTIVACIÓN de alertas
             for ubicacion, alerta in alertas.items():
                 if not alerta.get('activa', False):
                     continue
                 
-                # Buscar CPs en esa ubicación
                 for cp_id, cp_info in estados_cp.items():
                     if cp_info.get('ubicacion') == ubicacion:
-                        # Marcar como "FUERA DE SERVICIO" si no lo está ya
+                        # Si no estaba ya en alerta
                         if not cp_info.get('alerta_activa', False):
-                            print(f"[Central] ⚠️  Poniendo {cp_id} FUERA DE SERVICIO por alerta en {ubicacion}")
+                            print(f"[Central] ⚠️ Alerta detectada para {cp_id} en {ubicacion}")
                             
-                            # Cambiar estado
+                            # Actualizamos memoria
                             estados_cp[cp_id]['estado'] = 'FUERA_DE_SERVICIO'
                             estados_cp[cp_id]['alerta_activa'] = True
                             
-                            # Enviar sleep al CP
-                            enviar_orden(cp_id, 'sleep')
-                            
-                            guardar_cps_basedatos(estados_cp)
-                            
-                            # Auditoría
-                            registrar_auditoria(
+                            # Encolamos tareas
+                            ordenes_sleep.append(cp_id)
+                            auditorias_pendientes.append((
                                 cp_info.get('ip', 'unknown'),
                                 'CP_FUERA_SERVICIO_ALERTA',
-                                f'CP {cp_id} puesto fuera de servicio por alerta climática en {ubicacion}',
-                                {
-                                    'cp_id': cp_id, 
-                                    'ubicacion': ubicacion, 
-                                    'temperatura': alerta.get('temperatura'),
-                                    'motivo': alerta.get('mensaje')
-                                }
-                            )
-            
-            # PASO 2: Verificar CPs que pueden volver al servicio (alerta cancelada)
-            for cp_id, cp_info in list(estados_cp.items()):
+                                f'CP {cp_id} desactivado por alerta en {ubicacion}',
+                                {'cp_id': cp_id, 'motivo': alerta.get('mensaje')}
+                            ))
+                            cambios_en_memoria = True
+
+            # B) Verificar DESACTIVACIÓN de alertas (Restauración)
+            for cp_id, cp_info in estados_cp.items():
                 if cp_info.get('alerta_activa', False):
                     ubicacion_cp = cp_info.get('ubicacion')
-                    # Si no hay alerta activa en esa ubicación, restaurar
+                    # Comprobar si la alerta ya no existe o no está activa
                     if ubicacion_cp not in alertas or not alertas.get(ubicacion_cp, {}).get('activa', False):
-                        print(f"[Central] ✓ Restaurando {cp_id} (alerta cancelada en {ubicacion_cp})")
+                        print(f"[Central] ✓ Alerta finalizada para {cp_id}")
                         
-                        # Restaurar estado según healthy
-                        estados_cp[cp_id]['estado'] = 'ACTIVO' if cp_info.get('healthy') else 'DESCONECTADO'
+                        # Restauramos estado
+                        es_healthy = cp_info.get('healthy', False)
+                        estados_cp[cp_id]['estado'] = 'ACTIVO' if es_healthy else 'DESCONECTADO'
                         estados_cp[cp_id]['alerta_activa'] = False
                         
-                        # Solo reactivar si está healthy
-                        if cp_info.get('healthy', False):
-                            enviar_orden(cp_id, 'activate')
+                        # Encolamos tareas
+                        if es_healthy:
+                            ordenes_activate.append(cp_id)
                         
-                        guardar_cps_basedatos(estados_cp)
-                        
-                        # Auditoría
-                        registrar_auditoria(
+                        auditorias_pendientes.append((
                             cp_info.get('ip', 'unknown'),
                             'CP_RESTAURADO_ALERTA',
-                            f'CP {cp_id} restaurado al servicio (alerta cancelada en {ubicacion_cp})',
-                            {'cp_id': cp_id, 'ubicacion': ubicacion_cp}
-                        )
-                        
+                            f'CP {cp_id} restaurado (fin de alerta)',
+                            {'cp_id': cp_id}
+                        ))
+                        cambios_en_memoria = True
+            
+            # 3. Si hubo cambios, GUARDAMOS EN DISCO (Una sola vez)
+            if cambios_en_memoria:
+                guardar_cps_basedatos(estados_cp)
+
+        # ---------------------------------------------------------
+        # 4. ZONA LIBRE: Operaciones lentas (Red y Auditoría)
+        #    Ya hemos soltado el 'lock', así que el servidor sigue respondiendo a otros.
+        # ---------------------------------------------------------
+        
+        # Enviar órdenes de apagado
+        for cp_id in ordenes_sleep:
+            enviar_orden(cp_id, 'sleep')
+            
+        # Enviar órdenes de encendido
+        for cp_id in ordenes_activate:
+            enviar_orden(cp_id, 'activate')
+            
+        # Registrar auditorías
+        for ip, accion, desc, params in auditorias_pendientes:
+            registrar_auditoria(ip, accion, desc, params)
+
     except Exception as e:
         print(f"[Central] Error verificando alertas: {e}")
 

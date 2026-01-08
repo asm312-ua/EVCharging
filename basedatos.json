@@ -1,50 +1,63 @@
 {
-  "cps": {
-    "CP01": {
-      "ubicacion": "Oslo",
-      "precio_kwh": 0.5,
-      "estado": "ACTIVO",
-      "healthy": true,
-      "in_use": false,
-      "ip": "127.0.0.1",
-      "cmd_port": 6002,
-      "token": "0d46633c270ae8f6"
-    },
-    "CP02": {
-      "ubicacion": "Desconocida",
-      "estado": "ACTIVO",
-      "healthy": true,
-      "fecha_registro": "2026-01-05T17:46:18.235712",
-      "token": "019b503e9aaa370b",
-      "ip": "127.0.0.1",
-      "ultimo_inicio": "2026-01-05T17:46:18.235728",
-      "in_use": null,
-      "cmd_port": null
-    },
-    "CP03": {
-      "ubicacion": "Desconocida",
-      "estado": "DESCONECTADO",
-      "healthy": false,
-      "fecha_registro": "2026-01-06T21:45:07.598581",
-      "token": "36176c9ef9fd2",
-      "ip": "172.24.175.165",
-      "ultimo_inicio": "2026-01-06T21:50:17.647531",
-      "in_use": false,
-      "cmd_port": 6002
-    }
-  },
+  "cps": {},
   "drivers": {},
   "transacciones": [],
-  "alertas_climaticas": {
-    "Oslo": {
-      "ubicacion": "Oslo",
-      "tipo": "danger",
-      "severidad": "alta",
-      "temperatura": -15.8,
-      "condiciones": "Condiciones adversas",
-      "mensaje": "Alerta de fr\u00edo extremo en Oslo. CPs fuera de servicio.",
-      "timestamp": "2026-01-08T21:01:36.616857",
-      "activa": true
+  "alertas_climaticas": {},
+  "auditoria": [
+    {
+      "timestamp": "2026-01-08 22:28:08",
+      "fecha": "2026-01-08",
+      "hora": "22:28:08",
+      "origen_ip": "localhost",
+      "accion": "API_DETENIDO",
+      "descripcion": "API_Central detenido correctamente",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:28:08",
+      "fecha": "2026-01-08",
+      "hora": "22:28:08",
+      "origen_ip": "localhost",
+      "accion": "SISTEMA_DETENIDO",
+      "descripcion": "Central apagada - Limpiando datos temporales",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:27:34",
+      "fecha": "2026-01-08",
+      "hora": "22:27:34",
+      "origen_ip": "127.0.0.1",
+      "accion": "CAMBIO_ESTADO_CP",
+      "descripcion": "CP CP02: FUERA_DE_SERVICIO \u2192 ACTIVO",
+      "parametros": {
+        "cp_id": "CP02",
+        "estado_anterior": "FUERA_DE_SERVICIO",
+        "estado_nuevo": "ACTIVO"
+      }
+    },
+    {
+      "timestamp": "2026-01-08 22:27:34",
+      "fecha": "2026-01-08",
+      "hora": "22:27:34",
+      "origen_ip": "172.24.175.165",
+      "accion": "CP_FUERA_SERVICIO_ALERTA",
+      "descripcion": "CP CP02 desactivado por alerta en Oslo",
+      "parametros": {
+        "cp_id": "CP02",
+        "motivo": "Alerta de fr\u00edo extremo en Oslo. CPs fuera de servicio."
+      }
+    },
+    {
+      "timestamp": "2026-01-08 22:27:34",
+      "fecha": "2026-01-08",
+      "hora": "22:27:34",
+      "origen_ip": "172.24.175.165",
+      "accion": "CP_FUERA_SERVICIO_ALERTA",
+      "descripcion": "CP CP01 desactivado por alerta en Oslo",
+      "parametros": {
+        "cp_id": "CP01",
+        "motivo": "Alerta de fr\u00edo extremo en Oslo. CPs fuera de servicio."
+      }
     }
-  }
+  ]
 }
