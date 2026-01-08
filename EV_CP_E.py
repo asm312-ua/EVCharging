@@ -38,6 +38,7 @@ CENTRAL_HOST = sys.argv[3]
 saludable = True
 en_uso = False
 
+solicitudes_locales_ids = set()
 # Eventos de sincronización
 evento_apagado = threading.Event()
 evento_menu_detener = threading.Event()
@@ -72,12 +73,16 @@ def encriptar_mensaje(diccionario):
     # Concatenamos nonce + ciphertext y lo pasamos a base64 para enviarlo como texto
     return base64.b64encode(nonce + ciphertext).decode('utf-8')
 
+# En EV_CP_E.py (y recomendable en EV_Central.py también)
+
 def desencriptar_mensaje(b64_str):
-    """Base64 string -> AES Decrypt -> JSON bytes -> dict"""
     try:
+        if not b64_str: return None
+        b64_str = b64_str.strip() 
+        
         data = base64.b64decode(b64_str)
-        nonce = data[:12]      # Extraemos los primeros 12 bytes (nonce)
-        ciphertext = data[12:] # El resto es el mensaje cifrado
+        nonce = data[:12]
+        ciphertext = data[12:]
         original_bytes = aesgcm.decrypt(nonce, ciphertext, None)
         return json.loads(original_bytes.decode('utf-8'))
     except Exception as e:
@@ -89,52 +94,60 @@ def desencriptar_mensaje(b64_str):
 # ============================================================
 def enviar_y_esperar_respuesta(driver_id: str, cp_id: str, timeout: float = 12.0):
     if CONSUMIDOR_RESPUESTA is None:
-        return False, "kafka-no-iniciado"
+        return False, "kafka-no-iniciado", 0.0
 
     solicitud = {'driver_id': driver_id, 'cp_id': cp_id}
     
-    # Envía solicitud
+    # 1. ENVIAR SOLICITUD CIFRADA
     if productor_kafka:
-        productor_kafka.produce(TOPIC_SOLICITUD, key=driver_id, value=json.dumps(solicitud).encode('utf-8'))
+        msg_cifrado = encriptar_mensaje(solicitud)
+        productor_kafka.produce(TOPIC_SOLICITUD, key=driver_id, value=msg_cifrado.encode('utf-8'))
         productor_kafka.flush(2)
-        print(f"[Engine {CP_ID}] Solicitud enviada: {solicitud}")
+        print(f"[Engine {CP_ID}] Solicitud enviada (Cifrada)")  
     else:
         print(f"[KAFKA Fallback] {solicitud}")
 
-    # Espera respuesta
+    # 2. ESPERAR RESPUESTA (Y DESCIFRARLA)
     inicio = time.time()
     while time.time() - inicio < timeout:
-        msg = CONSUMIDOR_RESPUESTA.poll(0.5)  # poll frecuente
-        if msg is None:
-            continue
-        if msg.error():
-            if msg.error().code() != KafkaError._PARTITION_EOF:
-                print(f"[Engine {CP_ID}] Error Kafka: {msg.error()}")
-            continue
+        msg = CONSUMIDOR_RESPUESTA.poll(0.5)
+        if msg is None: continue
+        if msg.error(): continue
 
         try:
-            respuesta = json.loads(msg.value().decode('utf-8'))
-            # Filtrar SOLO respuestas para este Engine
+            # Leemos el churro encriptado
+            b64_str = msg.value().decode('utf-8')
+            # Intentamos descifrar
+            respuesta = desencriptar_mensaje(b64_str)
+            
+            if respuesta is None: continue # Si falla la llave, ignorar
+
+            # Validar que es para nosotros
             if (respuesta.get('cp_id') == CP_ID) and (respuesta.get('driver_id') == driver_id):
                 mensaje = respuesta.get('mensaje') or respuesta.get('estado')
-                precio = respuesta.get('precio_kwh', 0.30)  # ✓ EXTRAE EL PRECIO
+                precio = respuesta.get('precio_kwh', 0.30)
                 return True, mensaje, precio
+                
         except Exception as e:
-            print(f"[Engine {CP_ID}] Error parseando respuesta: {e}")
+            print(f"[Engine {CP_ID}] Error descifrando respuesta: {e}")
 
-    return False, "timeout"
+    return False, "timeout", 0.0
 
 
 def enviar_a_kafka(topic: str, payload: dict):
-    mensaje = json.dumps(payload)
-    if productor_kafka:
-        try:
-            productor_kafka.produce(topic, key=payload.get('cp_id'), value=mensaje.encode('utf-8'))
+# --- CAMBIO: Encriptar antes de enviar ---
+    try:
+        # payload (dict) -> Encriptar -> B64 String
+        mensaje_b64 = encriptar_mensaje(payload)
+        
+        if productor_kafka:
+            # Enviamos el string encriptado como bytes
+            productor_kafka.produce(topic, key=payload.get('cp_id'), value=mensaje_b64.encode('utf-8'))
             productor_kafka.poll(0)
-        except Exception as e:
-            print(f"[Engine {CP_ID}] Error al enviar Kafka: {e}")
-    else:
-        print(f"[KAFKA:{topic}] {mensaje}")
+        else:
+            print(f"[KAFKA:{topic}] (Simulado) {mensaje_b64}")
+    except Exception as e:
+        print(f"[Engine {CP_ID}] Error al enviar Kafka cifrado: {e}")
 
 
 def iniciar_consumidor_kafka():
@@ -160,29 +173,42 @@ def escuchar_mensajes_central():
     consumer = Consumer({
         'bootstrap.servers': KAFKA_BROKER,
         'group.id': f'engine-{CP_ID}-listener',
-        'auto.offset.reset': 'earliest'
+        'auto.offset.reset': 'latest'
     })
     consumer.subscribe([TOPIC_RESPUESTA])
 
-    print(f"[Engine {CP_ID}] Escuchando órdenes de la central...")
+    print(f"[Engine {CP_ID}] Escuchando órdenes CIFRADAS de la central...")
 
     try:
         while not evento_apagado.is_set():
             msg = consumer.poll(1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                continue
+            if msg is None: continue
+            if msg.error(): continue
+            
             try:
-                data = json.loads(msg.value().decode('utf-8'))
+                # 1. Obtener texto y limpiar basura (Arreglo del error base64)
+                b64_str = msg.value().decode('utf-8').strip() # <--- OJO AL STRIP
+                
+                # 2. Descifrar
+                data = desencriptar_mensaje(b64_str)
+                if data is None: continue 
+
+                # 3. Verificar si es para mí
                 if data.get('cp_id') == CP_ID:
-                    estado = (data.get('estado') or data.get('mensaje') or "").lower()
                     driver_id = data.get('driver_id', 'unknown')
+                    
+                    if driver_id in solicitudes_locales_ids:
+                        # Lo sacamos de la lista para no llenar la memoria eternamente
+                        solicitudes_locales_ids.discard(driver_id)
+                        continue
+                    # -------------------------------
+
+                    estado = (data.get('estado') or data.get('mensaje') or "").lower()
                     precio_kwh = float(data.get('precio_kwh', 1.0))
 
                     if 'autoriz' in estado or 'start' in estado:
                         if not en_uso:
-                            print(f"[Engine {CP_ID}] Orden de carga recibida desde central (driver={driver_id})")
+                            print(f"[Engine {CP_ID}] Orden REMOTA recibida (Start)")
                             en_uso = True
                             hilo_telemetria = threading.Thread(
                                 target=hilo_telemetria_f,
@@ -190,15 +216,15 @@ def escuchar_mensajes_central():
                                 daemon=True
                             )
                             hilo_telemetria.start()
+                            
                     elif 'stop' in estado:
-                        print(f"[Engine {CP_ID}] Orden de parada recibida desde central.")
+                        print(f"[Engine {CP_ID}] Orden REMOTA recibida (Stop).")
                         en_uso = False
 
             except Exception as e:
-                print(f"[Engine {CP_ID}] Error procesando mensaje de central: {e}")
+                print(f"[Engine {CP_ID}] Error procesando mensaje central: {e}")
     finally:
         consumer.close()
-
 
 # ============================================================
 # Gestión de telemetría y tickets
@@ -206,8 +232,13 @@ def escuchar_mensajes_central():
 almacen_telemetria = {}
 hilo_telemetria = None
 
+# En EV_CP_E.py
+
 def enviar_ticket_final():
     datos = almacen_telemetria.get(CP_ID)
+    
+    if datos is None:
+        return
     kwh_total = datos.get("kwh", 0)
     precio_kwh = datos.get("precio_kwh", 0.3)
     coste_total = datos.get("cost", kwh_total * precio_kwh)
@@ -222,6 +253,7 @@ def enviar_ticket_final():
         "end_ts": time.time()
     }
 
+    # Enviamos ticket cifrado
     enviar_a_kafka(TOPIC_TICKETS, ticket)
     print(f"[Engine {CP_ID}] Ticket enviado: kWh={ticket['kwh']} | Coste={ticket['cost']}€")
 
@@ -379,6 +411,7 @@ def menu_interactivo():
                     print("[!] Ya está en uso.")
                     continue
                 driver_id = input('Driver ID: ').strip() or 'DRIVER_SIM'
+                solicitudes_locales_ids.add(driver_id)
                 print("[Engine] Solicitud enviada. Esperando respuesta de la Central...")
                 ok, resp, precio_recibido = enviar_y_esperar_respuesta(driver_id, CP_ID)
 

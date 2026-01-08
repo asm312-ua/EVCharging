@@ -31,17 +31,18 @@ def encriptar_mensaje(diccionario):
     return base64.b64encode(nonce + ciphertext).decode('utf-8')
 
 def desencriptar_mensaje(b64_str):
-    """Base64 string -> AES Decrypt -> JSON bytes -> dict"""
     try:
+        if not b64_str: return None
+        b64_str = b64_str.strip() 
+        
         data = base64.b64decode(b64_str)
-        nonce = data[:12]      # Extraemos los primeros 12 bytes (nonce)
-        ciphertext = data[12:] # El resto es el mensaje cifrado
+        nonce = data[:12]
+        ciphertext = data[12:]
         original_bytes = aesgcm.decrypt(nonce, ciphertext, None)
         return json.loads(original_bytes.decode('utf-8'))
     except Exception as e:
         print(f"[Crypto] Error desencriptando: {e}")
         return None
-
 # ============================================================
 # Configuración global
 # ============================================================
@@ -752,9 +753,7 @@ def menu_central():
 # KAFKA: funciones auxiliares
 # ============================================================
 def enviar_respuesta_kafka(producer, driver_id, cp_id, estado, status, precio_kwh=None):
-    if producer is None:
-        print(f"[KAFKA:{TOPIC_RESPUESTAS}] fallback -> driver={driver_id} cp={cp_id} estado={estado} status={status}")
-        return
+    if producer is None: return
 
     payload = {
         'driver_id': driver_id,
@@ -765,12 +764,16 @@ def enviar_respuesta_kafka(producer, driver_id, cp_id, estado, status, precio_kw
     }
     if precio_kwh is not None:
         payload['precio_kwh'] = precio_kwh
+        
     try:
-        producer.produce(TOPIC_RESPUESTAS, key=driver_id, value=json.dumps(payload).encode('utf-8'))
-        producer.flush(3)
-        print(f"[Central] → Respuesta Kafka enviada: driver={driver_id}, status={status}")
+        msg_cifrado = encriptar_mensaje(payload)
+        
+        # Enviamos al topic de respuestas
+        producer.produce(TOPIC_RESPUESTAS, key=driver_id, value=msg_cifrado.encode('utf-8'))
+        producer.flush(1)
+        print(f"[Central] → Respuesta cifrada enviada a {driver_id}/{cp_id}")
     except Exception as e:
-        print(f"[Central] Error al producir respuesta Kafka: {e}")
+        print(f"[Central] Error enviando Kafka: {e}")
 
 
 # ============================================================
@@ -906,26 +909,26 @@ def procesar_mensaje_kafka(producer, topic, data):
 
 
 def kafka_worker(producer, consumer):
-    if consumer is None:
-        return
-    print("[Central] kafka_worker activo")
-    try:
-        while sistema_corriendo:
-            msg = consumer.poll(1.0)
-            if msg is None:
+    print("[Central] Kafka Worker escuchando (Modo Seguro)...")
+    while sistema_corriendo:
+        msg = consumer.poll(1.0)
+        if msg is None: continue
+        if msg.error(): continue
+        
+        try:
+            # 1. Descifrar el mensaje entrante
+            b64_str = msg.value().decode('utf-8')
+            data = desencriptar_mensaje(b64_str)
+            
+            if data is None:
+                # Si falla, puede ser un mensaje antiguo sin cifrar. Lo ignoramos.
+                # print("[Central] Ignorando mensaje no descifrable")
                 continue
-            if msg.error():
-                if msg.error().code() != KafkaError._PARTITION_EOF:
-                    print("[Central] Kafka error:", msg.error())
-                continue
-            try:
-                topic = msg.topic()
-                data = json.loads(msg.value().decode('utf-8'))
-                procesar_mensaje_kafka(producer, topic, data)
-            except Exception as e:
-                print("[Central] Error procesando mensaje:", e)
-    except Exception as e:
-        print("[Central] kafka_worker terminado:", e)
+
+            procesar_mensaje_kafka(producer, msg.topic(), data)
+            
+        except Exception as e:
+            print(f"[Kafka] Error procesando mensaje: {e}")
 
 
 # ============================================================
