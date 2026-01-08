@@ -11,16 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any, Dict, Optional
 
 import tink
 from google.oauth2 import service_account
-
 from tink import KmsClient
 
-from confluent_kafka.schema_registry.rules.encryption.gcpkms.gcp_client import \
-    _GcpKmsClient
-from confluent_kafka.schema_registry.rules.encryption.kms_driver_registry import \
-    KmsDriver, register_kms_driver
+from confluent_kafka.schema_registry.rules.encryption.gcpkms.gcp_client import _GcpKmsClient
+from confluent_kafka.schema_registry.rules.encryption.kms_driver_registry import KmsDriver, register_kms_driver
 
 _PREFIX = "gcp-kms://"
 _ACCOUNT_TYPE = "account.type"
@@ -32,13 +30,13 @@ _TOKEN_URI = "token.uri"
 
 
 class GcpKmsDriver(KmsDriver):
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def get_key_url_prefix(self) -> str:
         return _PREFIX
 
-    def new_kms_client(self, conf: dict, key_url: str) -> KmsClient:
+    def new_kms_client(self, conf: Dict[str, Any], key_url: Optional[str]) -> KmsClient:
         uri_prefix = _PREFIX
         if key_url is not None:
             uri_prefix = key_url
@@ -58,26 +56,28 @@ class GcpKmsDriver(KmsDriver):
         if client_id is None or client_email is None or private_key_id is None or private_key is None:
             creds = None
         else:
-            creds = service_account.Credentials.from_service_account_info({
-                "type": account_type,
-                "client_id": client_id,
-                "client_email": client_email,
-                "private_key_id": private_key_id,
-                "private_key": private_key,
-                "token_uri": token_uri
-            })
+            creds = service_account.Credentials.from_service_account_info(
+                {
+                    "type": account_type,
+                    "client_id": client_id,
+                    "client_email": client_email,
+                    "private_key_id": private_key_id,
+                    "private_key": private_key,
+                    "token_uri": token_uri,
+                }
+            )
 
         return _GcpKmsClient(uri_prefix, creds)
 
     @classmethod
-    def register(cls):
+    def register(cls) -> None:
         register_kms_driver(GcpKmsDriver())
 
 
 def _key_uri_to_key_arn(key_uri: str) -> str:
     if not key_uri.startswith(_PREFIX):
         raise tink.TinkError('invalid key URI')
-    return key_uri[len(_PREFIX):]
+    return key_uri[len(_PREFIX) :]
 
 
 def _get_region_from_key_arn(key_arn: str) -> str:

@@ -6,6 +6,7 @@ import os
 import pprint
 import subprocess
 import sys
+from datetime import datetime
 from confluent_kafka import Producer, Consumer, KafkaError
 
 # ============================================================
@@ -17,7 +18,7 @@ CENTRAL_PORT_SOLICITUDES = 6001
 SOCKET_BUFFER = 8192
 
 # Kafka topics
-KAFKA_BROKER = 'localhost:9092'
+KAFKA_BROKER = sys.argv[1] if len(sys.argv) > 1 else 'localhost:9092'
 TOPIC_SOLICIT_DRIVER = 'solicitudes_driver'
 TOPIC_SOLICIT_CP = 'peticiones_carga'
 TOPIC_SOLICIT_ENGINE = 'peticiones_engine'
@@ -31,68 +32,145 @@ pp = pprint.PrettyPrinter(indent=4)
 
 # Proceso del API
 api_process = None
+sistema_corriendo = True
+
+FICHERO_BASE_DATOS = "basedatos.json"
+
+
+# ============================================================
+# SISTEMA DE AUDITORÍA
+# ============================================================
+def registrar_auditoria(origen_ip, accion, descripcion, parametros=None):
+    """
+    Registra un evento en el sistema de auditoría
+    
+    Args:
+        origen_ip: IP de la máquina que genera el evento
+        accion: Tipo de acción (ej: "SOLICITUD_CARGA", "CP_REGISTRADO", etc.)
+        descripcion: Descripción detallada del evento
+        parametros: Datos adicionales del evento (dict)
+    """
+    try:
+        with open(FICHERO_BASE_DATOS, "r") as f:
+            data = json.load(f)
+        
+        if 'auditoria' not in data:
+            data['auditoria'] = []
+        
+        # Crear entrada de auditoría
+        entrada = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'fecha': datetime.now().strftime('%Y-%m-%d'),
+            'hora': datetime.now().strftime('%H:%M:%S'),
+            'origen_ip': origen_ip,
+            'accion': accion,
+            'descripcion': descripcion,
+            'parametros': parametros or {}
+        }
+        
+        # Añadir al inicio (más recientes primero)
+        data['auditoria'].insert(0, entrada)
+        
+        # Limitar a últimas 200 entradas
+        if len(data['auditoria']) > 200:
+            data['auditoria'] = data['auditoria'][:200]
+        
+        with open(FICHERO_BASE_DATOS, "w") as f:
+            json.dump(data, f, indent=2)
+        
+        # Mostrar en terminal
+        print(f"[AUDITORÍA] [{entrada['timestamp']}] {origen_ip} → {accion}: {descripcion}")
+        
+    except Exception as e:
+        print(f"[Central] Error en auditoría: {e}")
 
 
 # ============================================================
 # BASE DE DATOS UNIFICADA
 # ============================================================
-FICHERO_BASE_DATOS = "basedatos.json"
-
 def cargar_cps_basedatos():
-    """Carga la base de datos unificada"""
     if not os.path.exists(FICHERO_BASE_DATOS):
         print("[Central] No se ha encontrado basedatos.json. Creando estructura inicial...")
         data = {
             'cps': {},
             'drivers': {},
             'transacciones': [],
-            'alertas_climaticas': {}
+            'alertas_climaticas': {},
+            'auditoria': []
         }
-        guardar_cps_basedatos(data)
+        guardar_datos_completos(data)
+        registrar_auditoria('localhost', 'SISTEMA_INICIADO', 'Base de datos creada')
         return {}
     
     try:
         with open(FICHERO_BASE_DATOS, "r") as f:
             datos = json.load(f)
         
-        # Retornar solo la sección de CPs
         cps = datos.get('cps', {})
         print(f"[Central] Base de datos cargada ({len(cps)} CPs).")
+        registrar_auditoria('localhost', 'SISTEMA_INICIADO', f'Base de datos cargada con {len(cps)} CPs')
         return cps
     except Exception as e:
         print(f"[Central] Error al cargar base de datos: {e}")
         return {}
 
 
-def guardar_cps_basedatos(data_cps):
-    """Guarda los CPs manteniendo el resto de información intacta"""
+def guardar_datos_completos(data_completa):
+    """Guarda la estructura completa de la BD"""
     try:
-        # Leer toda la base de datos
+        with open(FICHERO_BASE_DATOS, "w") as f:
+            json.dump(data_completa, f, indent=2)
+    except Exception as e:
+        print(f"[Central] Error al guardar BD: {e}")
+
+
+def guardar_cps_basedatos(data_cps):
+    """Guarda solo los CPs manteniendo el resto intacto"""
+    try:
         if os.path.exists(FICHERO_BASE_DATOS):
             with open(FICHERO_BASE_DATOS, "r") as f:
                 data_completa = json.load(f)
         else:
             data_completa = {
-                'cps': {},
-                'drivers': {},
-                'transacciones': [],
-                'alertas_climaticas': {}
+                'cps': {}, 
+                'drivers': {}, 
+                'transacciones': [], 
+                'alertas_climaticas': {},
+                'auditoria': []
             }
         
-        # Si data_cps es solo el dict de CPs, actualizamos solo esa sección
-        if isinstance(data_cps, dict) and not any(k in data_cps for k in ['drivers', 'transacciones', 'alertas_climaticas']):
-            data_completa['cps'] = data_cps
-        else:
-            # Si es la estructura completa, guardamos todo
-            data_completa = data_cps
+        data_completa['cps'] = data_cps
         
         with open(FICHERO_BASE_DATOS, "w") as f:
             json.dump(data_completa, f, indent=2)
     except Exception as e:
-        print(f"[Central] Error al guardar base de datos: {e}")
+        print(f"[Central] Error al guardar CPs: {e}")
 
 
-def actualizar_drivers(driver_id, estado):
+def limpiar_datos_temporales():
+    """Limpia drivers, transacciones, alertas y auditoría al cerrar"""
+    try:
+        # Primero registrar el cierre antes de limpiar
+        registrar_auditoria('localhost', 'SISTEMA_DETENIDO', 'Central apagada - Limpiando datos temporales')
+        
+        with open(FICHERO_BASE_DATOS, "r") as f:
+            data = json.load(f)
+        
+        # Mantener solo CPs (limpiar drivers, transacciones, alertas)
+        # La auditoría se mantiene para histórico
+        data['drivers'] = {}
+        data['transacciones'] = []
+        data['alertas_climaticas'] = {}  # ← Limpiar alertas al cerrar
+        
+        with open(FICHERO_BASE_DATOS, "w") as f:
+            json.dump(data, f, indent=2)
+        
+        print("[Central] ✓ Datos temporales limpiados (drivers, transacciones, alertas)")
+    except Exception as e:
+        print(f"[Central] Error al limpiar datos temporales: {e}")
+
+
+def actualizar_drivers(driver_id, estado, origen_ip='unknown'):
     """Actualiza el estado de un driver en la base de datos"""
     try:
         with open(FICHERO_BASE_DATOS, "r") as f:
@@ -104,16 +182,26 @@ def actualizar_drivers(driver_id, estado):
         data['drivers'][driver_id] = {
             'driver_id': driver_id,
             'estado': estado,
-            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'ip': origen_ip
         }
         
         with open(FICHERO_BASE_DATOS, "w") as f:
             json.dump(data, f, indent=2)
+        
+        # Auditoría
+        registrar_auditoria(
+            origen_ip, 
+            'CAMBIO_ESTADO_DRIVER', 
+            f'Driver {driver_id} cambió a estado: {estado}',
+            {'driver_id': driver_id, 'nuevo_estado': estado}
+        )
+        
     except Exception as e:
         print(f"[Central] Error al actualizar driver: {e}")
 
 
-def actualizar_transacciones(driver_id, cp_id, accion='inicio'):
+def actualizar_transacciones(driver_id, cp_id, accion='inicio', origen_ip='unknown'):
     """Actualiza las transacciones en la base de datos"""
     try:
         with open(FICHERO_BASE_DATOS, "r") as f:
@@ -129,11 +217,28 @@ def actualizar_transacciones(driver_id, cp_id, accion='inicio'):
                 'inicio': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'estado': 'en_curso'
             })
+            
+            # Auditoría
+            registrar_auditoria(
+                origen_ip,
+                'TRANSACCION_INICIADA',
+                f'Carga iniciada: {driver_id} en {cp_id}',
+                {'driver_id': driver_id, 'cp_id': cp_id}
+            )
+            
         elif accion == 'fin':
             data['transacciones'] = [
                 t for t in data['transacciones']
                 if not (t.get('driver_id') == driver_id and t.get('cp_id') == cp_id)
             ]
+            
+            # Auditoría
+            registrar_auditoria(
+                origen_ip,
+                'TRANSACCION_FINALIZADA',
+                f'Carga finalizada: {driver_id} en {cp_id}',
+                {'driver_id': driver_id, 'cp_id': cp_id}
+            )
         
         with open(FICHERO_BASE_DATOS, "w") as f:
             json.dump(data, f, indent=2)
@@ -154,13 +259,14 @@ def iniciar_api_central():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        time.sleep(2)  # Dar tiempo a que arranque
+        time.sleep(2)
         print(f"[Central] API_Central iniciado (PID: {api_process.pid})")
         print("[Central] API disponible en http://localhost:5000")
+        registrar_auditoria('localhost', 'API_INICIADO', f'API_Central iniciado (PID: {api_process.pid})')
         return api_process
     except Exception as e:
         print(f"[Central] Error al iniciar API_Central: {e}")
-        print("[Central] La Central continuará funcionando sin API.")
+        registrar_auditoria('localhost', 'ERROR_API', f'Error al iniciar API: {e}')
         return None
 
 
@@ -173,6 +279,7 @@ def detener_api_central():
             api_process.terminate()
             api_process.wait(timeout=5)
             print("[Central] API_Central detenido.")
+            registrar_auditoria('localhost', 'API_DETENIDO', 'API_Central detenido correctamente')
         except Exception as e:
             print(f"[Central] Error al detener API: {e}")
             api_process.kill()
@@ -190,10 +297,12 @@ def inicializar_kafka():
             'auto.offset.reset': 'earliest'
         })
         consumer.subscribe([TOPIC_SOLICIT_CP, TOPIC_TICKETS, TOPIC_SOLICIT_DRIVER, TOPIC_SOLICIT_ENGINE])
-        print("[Central] Kafka inicializado (producer + consumer).")
+        print(f"[Central] Kafka inicializado (broker: {KAFKA_BROKER})")
+        registrar_auditoria('localhost', 'KAFKA_INICIADO', f'Kafka inicializado en {KAFKA_BROKER}')
         return producer, consumer
     except Exception as e:
         print(f"[Central] Aviso: Kafka no disponible: {e}")
+        registrar_auditoria('localhost', 'ERROR_KAFKA', f'Kafka no disponible: {e}')
         return None, None
 
 
@@ -202,6 +311,8 @@ def inicializar_kafka():
 # ============================================================
 def manejar_estado_cp(conn, addr):
     buffer = ''
+    origen_ip = addr[0]
+    
     with conn:
         while True:
             data = conn.recv(SOCKET_BUFFER)
@@ -215,9 +326,10 @@ def manejar_estado_cp(conn, addr):
                     cp_id = state.get('cp_id')
                     if not cp_id:
                         continue
+                    
                     with lock_estados:
                         if cp_id not in estados_cp:
-                            print(f"\n[Central] Registrado un nuevo CP: {cp_id}")
+                            print(f"\n[Central] ✓ Registrado nuevo CP: {cp_id} desde {origen_ip}")
                             estados_cp[cp_id] = {
                                 "ubicacion": "Desconocida",
                                 "precio_kwh": 0.3,
@@ -225,15 +337,48 @@ def manejar_estado_cp(conn, addr):
                                 "healthy": False,
                                 "in_use": False,
                             }
+                            
+                            # Auditoría de registro
+                            registrar_auditoria(
+                                origen_ip,
+                                'CP_REGISTRADO',
+                                f'Nuevo CP registrado: {cp_id}',
+                                {'cp_id': cp_id, 'healthy': state.get('healthy', False)}
+                            )
 
+                        # Actualizar estado
+                        estado_anterior = estados_cp[cp_id].get('estado')
+                        healthy_anterior = estados_cp[cp_id].get('healthy')
+                        
                         estados_cp[cp_id]['estado'] = "ACTIVO" if state.get('healthy', False) else "DESCONECTADO"
                         estados_cp[cp_id]['healthy'] = state.get('healthy', False)
                         estados_cp[cp_id]['in_use'] = state.get('in_use', False)
-                        estados_cp[cp_id]['ip'] = state.get('ip', addr[0])
+                        estados_cp[cp_id]['ip'] = state.get('ip', origen_ip)
                         estados_cp[cp_id]['cmd_port'] = state.get('cmd_port')
+                        
+                        # Auditoría de cambio de estado significativo
+                        if estado_anterior != estados_cp[cp_id]['estado']:
+                            registrar_auditoria(
+                                origen_ip,
+                                'CAMBIO_ESTADO_CP',
+                                f'CP {cp_id}: {estado_anterior} → {estados_cp[cp_id]["estado"]}',
+                                {'cp_id': cp_id, 'estado_anterior': estado_anterior, 'estado_nuevo': estados_cp[cp_id]['estado']}
+                            )
+                        
+                        if healthy_anterior != estados_cp[cp_id]['healthy']:
+                            accion = 'CP_SALUDABLE' if estados_cp[cp_id]['healthy'] else 'CP_NO_SALUDABLE'
+                            registrar_auditoria(
+                                origen_ip,
+                                accion,
+                                f'CP {cp_id} cambió healthy: {healthy_anterior} → {estados_cp[cp_id]["healthy"]}',
+                                {'cp_id': cp_id, 'healthy': estados_cp[cp_id]['healthy']}
+                            )
+                        
                         guardar_cps_basedatos(estados_cp)
+                        
                 except Exception as e:
                     print(f"[Central] Error procesando estado: {e}")
+                    registrar_auditoria(origen_ip, 'ERROR_PROCESO_ESTADO', f'Error procesando estado de CP: {e}')
 
 
 def servidor_estados_cp():
@@ -241,9 +386,13 @@ def servidor_estados_cp():
         s.bind((CENTRAL_HOST, CENTRAL_PORT_ESTADOS))
         s.listen()
         print(f"[Central] Escuchando estados en puerto {CENTRAL_PORT_ESTADOS}")
-        while True:
-            conn, addr = s.accept()
-            threading.Thread(target=manejar_estado_cp, args=(conn, addr), daemon=True).start()
+        while sistema_corriendo:
+            try:
+                s.settimeout(1.0)
+                conn, addr = s.accept()
+                threading.Thread(target=manejar_estado_cp, args=(conn, addr), daemon=True).start()
+            except socket.timeout:
+                continue
 
 
 # ============================================================
@@ -254,6 +403,7 @@ def enviar_orden(cp_id, action):
         info = estados_cp.get(cp_id)
     if not info:
         print(f"[Central] No se conoce el CP {cp_id}")
+        registrar_auditoria('localhost', 'ERROR_CP_DESCONOCIDO', f'Intento de enviar orden a CP desconocido: {cp_id}')
         return
 
     try:
@@ -261,8 +411,100 @@ def enviar_orden(cp_id, action):
             s.sendall(json.dumps({'cp_id': cp_id, 'action': action}).encode('utf-8'))
             resp = s.recv(1024)
             print(f"[Central] Respuesta de {cp_id}: {resp.decode('utf-8')}")
+            
+            # Auditoría
+            registrar_auditoria(
+                info['ip'],
+                'ORDEN_ENVIADA_CP',
+                f'Orden "{action}" enviada a {cp_id}',
+                {'cp_id': cp_id, 'action': action, 'respuesta': resp.decode('utf-8')}
+            )
     except Exception as e:
         print(f"[Central] Error al enviar orden a {cp_id}: {e}")
+        registrar_auditoria(info.get('ip', 'unknown'), 'ERROR_ENVIO_ORDEN', f'Error enviando orden a {cp_id}: {e}')
+
+
+# ============================================================
+# VERIFICADOR DE ALERTAS CLIMÁTICAS
+# ============================================================
+def verificar_alertas_climaticas():
+    """Verifica alertas y pone CPs fuera de servicio"""
+    try:
+        with open(FICHERO_BASE_DATOS, "r") as f:
+            data = json.load(f)
+        
+        alertas = data.get('alertas_climaticas', {})
+        
+        with lock_estados:
+            # PASO 1: Verificar CPs que deben ponerse fuera de servicio
+            for ubicacion, alerta in alertas.items():
+                if not alerta.get('activa', False):
+                    continue
+                
+                # Buscar CPs en esa ubicación
+                for cp_id, cp_info in estados_cp.items():
+                    if cp_info.get('ubicacion') == ubicacion:
+                        # Marcar como "FUERA DE SERVICIO" si no lo está ya
+                        if not cp_info.get('alerta_activa', False):
+                            print(f"[Central] ⚠️  Poniendo {cp_id} FUERA DE SERVICIO por alerta en {ubicacion}")
+                            
+                            # Cambiar estado
+                            estados_cp[cp_id]['estado'] = 'FUERA_DE_SERVICIO'
+                            estados_cp[cp_id]['alerta_activa'] = True
+                            
+                            # Enviar sleep al CP
+                            enviar_orden(cp_id, 'sleep')
+                            
+                            guardar_cps_basedatos(estados_cp)
+                            
+                            # Auditoría
+                            registrar_auditoria(
+                                cp_info.get('ip', 'unknown'),
+                                'CP_FUERA_SERVICIO_ALERTA',
+                                f'CP {cp_id} puesto fuera de servicio por alerta climática en {ubicacion}',
+                                {
+                                    'cp_id': cp_id, 
+                                    'ubicacion': ubicacion, 
+                                    'temperatura': alerta.get('temperatura'),
+                                    'motivo': alerta.get('mensaje')
+                                }
+                            )
+            
+            # PASO 2: Verificar CPs que pueden volver al servicio (alerta cancelada)
+            for cp_id, cp_info in list(estados_cp.items()):
+                if cp_info.get('alerta_activa', False):
+                    ubicacion_cp = cp_info.get('ubicacion')
+                    # Si no hay alerta activa en esa ubicación, restaurar
+                    if ubicacion_cp not in alertas or not alertas.get(ubicacion_cp, {}).get('activa', False):
+                        print(f"[Central] ✓ Restaurando {cp_id} (alerta cancelada en {ubicacion_cp})")
+                        
+                        # Restaurar estado según healthy
+                        estados_cp[cp_id]['estado'] = 'ACTIVO' if cp_info.get('healthy') else 'DESCONECTADO'
+                        estados_cp[cp_id]['alerta_activa'] = False
+                        
+                        # Solo reactivar si está healthy
+                        if cp_info.get('healthy', False):
+                            enviar_orden(cp_id, 'activate')
+                        
+                        guardar_cps_basedatos(estados_cp)
+                        
+                        # Auditoría
+                        registrar_auditoria(
+                            cp_info.get('ip', 'unknown'),
+                            'CP_RESTAURADO_ALERTA',
+                            f'CP {cp_id} restaurado al servicio (alerta cancelada en {ubicacion_cp})',
+                            {'cp_id': cp_id, 'ubicacion': ubicacion_cp}
+                        )
+                        
+    except Exception as e:
+        print(f"[Central] Error verificando alertas: {e}")
+
+
+def hilo_verificador_alertas():
+    """Hilo que verifica alertas cada 5 segundos"""
+    while sistema_corriendo:
+        verificar_alertas_climaticas()
+        time.sleep(5)
 
 
 # ============================================================
@@ -281,34 +523,50 @@ def menu_central():
         op = input("> ").strip()
         if op == '1':
             with lock_estados:
-                print("\nID\tUbicación\t\tPrecio\t\tEstado\tHealthy\tIn_Use")
+                print("\nID\tUbicación\t\tPrecio\t\tEstado\t\tHealthy\tIn_Use")
                 print("----------------------------------------------------------------------------------")
                 for cp, info in estados_cp.items():
                     print(f"{cp}\t{info['ubicacion'][:18]:<18}\t{info['precio_kwh']} €/kWh\t{info['estado']}\t{info['healthy']}\t{info['in_use']}")
         elif op == '2':
-            enviar_orden(input("CP ID: ").strip(), 'activate')
+            cp_id = input("CP ID: ").strip()
+            enviar_orden(cp_id, 'activate')
         elif op == '3':
-            enviar_orden(input("CP ID: ").strip(), 'sleep')
+            cp_id = input("CP ID: ").strip()
+            enviar_orden(cp_id, 'sleep')
         elif op == '4':
-            cp_id = input("CP ID: ")
+            cp_id = input("CP ID: ").strip()
             info = estados_cp.get(cp_id)
             if not info:
                 print(f"[Central] CP {cp_id} no encontrado.")
                 continue
-            print(f"{cp_id} -> Ubicación actual: {info['ubicacion']} | Precio actual: {info['precio_kwh']}")
+            print(f"{cp_id} → Ubicación actual: {info['ubicacion']} | Precio actual: {info['precio_kwh']}")
             opcion = input("¿Desea cambiar los datos? (S/N): ")
             if opcion == 'S':
-                nueva_ubicacion = input(f"Introduce la ubicación de {cp_id}: ")
-                nuevo_precio = input(f"Introduce el precio/kWh de {cp_id}: ")
+                nueva_ubicacion = input(f"Introduce la ubicación de {cp_id}: ").strip()
+                nuevo_precio = input(f"Introduce el precio/kWh de {cp_id}: ").strip()
+                
+                cambios = {}
                 if nueva_ubicacion:
                     estados_cp[cp_id]['ubicacion'] = nueva_ubicacion
+                    cambios['ubicacion'] = nueva_ubicacion
                 if nuevo_precio:
                     try:
                         estados_cp[cp_id]['precio_kwh'] = float(nuevo_precio)
+                        cambios['precio_kwh'] = float(nuevo_precio)
                     except ValueError:
                         print("Precio inválido. No se actualizó.")
+                
                 guardar_cps_basedatos(estados_cp)
                 print(f"[Central] CP {cp_id} actualizado.")
+                
+                # Auditoría
+                registrar_auditoria(
+                    'localhost',
+                    'CP_MODIFICADO_MANUAL',
+                    f'CP {cp_id} modificado desde menú central',
+                    {'cp_id': cp_id, 'cambios': cambios}
+                )
+                
         elif op == '5':
             break
         else:
@@ -335,12 +593,13 @@ def enviar_respuesta_kafka(producer, driver_id, cp_id, estado, status, precio_kw
     try:
         producer.produce(TOPIC_RESPUESTAS, key=driver_id, value=json.dumps(payload).encode('utf-8'))
         producer.flush(3)
+        print(f"[Central] → Respuesta Kafka enviada: driver={driver_id}, status={status}")
     except Exception as e:
         print(f"[Central] Error al producir respuesta Kafka: {e}")
 
 
 # ============================================================
-# KAFKA: procesado de mensajes (CON ACTUALIZACIÓN DE BD)
+# KAFKA: procesado de mensajes (CON AUDITORÍA)
 # ============================================================
 def procesar_mensaje_kafka(producer, topic, data):
     try:
@@ -350,7 +609,7 @@ def procesar_mensaje_kafka(producer, topic, data):
             print(f"[Central][KAFKA] Solicitud recibida: driver={driver_id} cp={cp_id}")
 
             # Actualizar estado del driver en BD
-            actualizar_drivers(driver_id, 'solicitando_carga')
+            actualizar_drivers(driver_id, 'solicitando_carga', 'kafka')
 
             with lock_estados:
                 estado_cp = estados_cp.get(cp_id)
@@ -359,19 +618,43 @@ def procesar_mensaje_kafka(producer, topic, data):
             if not estado_cp:
                 mensaje = f"CP {cp_id} desconocido"
                 enviar_respuesta_kafka(producer, driver_id, cp_id, mensaje, 'ko')
-                actualizar_drivers(driver_id, 'error_cp_desconocido')
+                actualizar_drivers(driver_id, 'error_cp_desconocido', 'kafka')
+                
+                # Auditoría
+                registrar_auditoria(
+                    'kafka',
+                    'SOLICITUD_DENEGADA_CP_DESCONOCIDO',
+                    f'Driver {driver_id} intentó cargar en CP desconocido: {cp_id}',
+                    {'driver_id': driver_id, 'cp_id': cp_id}
+                )
                 return
 
             if not estado_cp.get('healthy', False):
                 mensaje = f"CP {cp_id} no saludable"
                 enviar_respuesta_kafka(producer, driver_id, cp_id, mensaje, 'ko')
-                actualizar_drivers(driver_id, 'error_cp_no_disponible')
+                actualizar_drivers(driver_id, 'error_cp_no_disponible', 'kafka')
+                
+                # Auditoría
+                registrar_auditoria(
+                    'kafka',
+                    'SOLICITUD_DENEGADA_CP_NO_SALUDABLE',
+                    f'Carga denegada: CP {cp_id} no saludable',
+                    {'driver_id': driver_id, 'cp_id': cp_id}
+                )
                 return
 
             if estado_cp.get('in_use', False):
                 mensaje = f"CP {cp_id} ocupado"
                 enviar_respuesta_kafka(producer, driver_id, cp_id, mensaje, 'ko')
-                actualizar_drivers(driver_id, 'error_cp_ocupado')
+                actualizar_drivers(driver_id, 'error_cp_ocupado', 'kafka')
+                
+                # Auditoría
+                registrar_auditoria(
+                    'kafka',
+                    'SOLICITUD_DENEGADA_CP_OCUPADO',
+                    f'Carga denegada: CP {cp_id} ya está en uso',
+                    {'driver_id': driver_id, 'cp_id': cp_id}
+                )
                 return
 
             # Autorizar carga
@@ -379,10 +662,10 @@ def procesar_mensaje_kafka(producer, topic, data):
             enviar_respuesta_kafka(producer, driver_id, cp_id, mensaje_ok, 'ok', precio_kwh)
             
             # Actualizar BD
-            actualizar_drivers(driver_id, 'cargando')
-            actualizar_transacciones(driver_id, cp_id, 'inicio')
+            actualizar_drivers(driver_id, 'cargando', estado_cp.get('ip', 'unknown'))
+            actualizar_transacciones(driver_id, cp_id, 'inicio', estado_cp.get('ip', 'unknown'))
             
-            print(f"[Central] Autorizada carga para {driver_id} en {cp_id}")
+            print(f"[Central] Autorizada carga para {driver_id} en {cp_id} con precio: {precio_kwh}")
 
             # Notificar al Engine
             payload_engine = {
@@ -396,6 +679,7 @@ def procesar_mensaje_kafka(producer, topic, data):
             try:
                 producer.produce(TOPIC_RESPUESTAS, key=cp_id, value=json.dumps(payload_engine).encode('utf-8'))
                 producer.flush(3)
+                print(f"[Central] Notificación enviada al Engine {cp_id}")
             except Exception as e:
                 print(f"[Central] Error al notificar al Engine: {e}")
 
@@ -409,11 +693,14 @@ def procesar_mensaje_kafka(producer, topic, data):
             kwh = data.get('kwh')
             cost = data.get('cost')
 
-            print(f"[Central] Ticket recibido de {cp_id}: kWh={kwh} cost={cost}")
+            print(f"[Central] Ticket recibido de {cp_id}: kWh={kwh} cost={cost} driver={driver_id}")
 
             # Actualizar BD
-            actualizar_drivers(driver_id, 'completado')
-            actualizar_transacciones(driver_id, cp_id, 'fin')
+            with lock_estados:
+                cp_ip = estados_cp.get(cp_id, {}).get('ip', 'unknown')
+            
+            actualizar_drivers(driver_id, 'completado', cp_ip)
+            actualizar_transacciones(driver_id, cp_id, 'fin', cp_ip)
 
             with lock_estados:
                 rec = estados_cp.setdefault(cp_id, {})
@@ -435,6 +722,7 @@ def procesar_mensaje_kafka(producer, topic, data):
             try:
                 producer.produce(TOPIC_RESPUESTAS, key=driver_id, value=json.dumps(payload_ticket).encode('utf-8'))
                 producer.flush(3)
+                print(f"[Central] Ticket reenviado al driver {driver_id}.")
             except Exception as e:
                 print(f"[Central] Error al reenviar ticket: {e}")
 
@@ -447,7 +735,7 @@ def kafka_worker(producer, consumer):
         return
     print("[Central] kafka_worker activo")
     try:
-        while True:
+        while sistema_corriendo:
             msg = consumer.poll(1.0)
             if msg is None:
                 continue
@@ -469,7 +757,11 @@ def kafka_worker(producer, consumer):
 # Ejecución
 # ============================================================
 def main():
-    global estados_cp
+    global estados_cp, sistema_corriendo
+    
+    print("[Central] ==============================================")
+    print(f"[Central] Iniciando EV_Central (Kafka: {KAFKA_BROKER})")
+    print("[Central] ==============================================")
     
     # Cargar base de datos
     estados_cp = cargar_cps_basedatos()
@@ -485,6 +777,9 @@ def main():
     # Servidor de estados
     threading.Thread(target=servidor_estados_cp, daemon=True).start()
     
+    # Verificador de alertas
+    threading.Thread(target=hilo_verificador_alertas, daemon=True).start()
+    
     print("[Central] Servidor iniciado.")
     print("[Central] API REST disponible en http://localhost:5000")
     
@@ -493,6 +788,8 @@ def main():
     except KeyboardInterrupt:
         print("\n[Central] Cerrando sistema...")
     finally:
+        sistema_corriendo = False
+        limpiar_datos_temporales()
         detener_api_central()
         print("[Central] Sistema apagado.")
 
