@@ -75,18 +75,34 @@ def encriptar_mensaje(diccionario):
 
 # En EV_CP_E.py (y recomendable en EV_Central.py también)
 
-def desencriptar_mensaje(b64_str):
+ef desencriptar_mensaje(b64_str):
+
     try:
-        if not b64_str: return None
-        b64_str = b64_str.strip() 
+        if not b64_str: 
+            return None
         
+        b64_str = b64_str.strip()
+        
+        if b64_str.startswith('{'):
+            return json.loads(b64_str)
+
+        if b64_str.startswith('"') and b64_str.endswith('"'):
+            b64_str = b64_str[1:-1]
+        
+        if len(b64_str) % 4 == 1:
+            b64_str = b64_str[:-1]
+        
+        missing_padding = len(b64_str) % 4
+        if missing_padding:
+            b64_str += '=' * (4 - missing_padding)
+
         data = base64.b64decode(b64_str)
         nonce = data[:12]
         ciphertext = data[12:]
         original_bytes = aesgcm.decrypt(nonce, ciphertext, None)
         return json.loads(original_bytes.decode('utf-8'))
+        
     except Exception as e:
-        print(f"[Crypto] Error desencriptando: {e}")
         return None
 
 # ============================================================
