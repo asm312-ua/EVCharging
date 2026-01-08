@@ -5,24 +5,37 @@
   "alertas_climaticas": {},
   "auditoria": [
     {
+<<<<<<< HEAD
       "timestamp": "2026-01-08 22:28:08",
       "fecha": "2026-01-08",
       "hora": "22:28:08",
+=======
+      "timestamp": "2026-01-08 22:39:28",
+      "fecha": "2026-01-08",
+      "hora": "22:39:28",
+>>>>>>> tetas
       "origen_ip": "localhost",
       "accion": "API_DETENIDO",
       "descripcion": "API_Central detenido correctamente",
       "parametros": {}
     },
     {
+<<<<<<< HEAD
       "timestamp": "2026-01-08 22:28:08",
       "fecha": "2026-01-08",
       "hora": "22:28:08",
+=======
+      "timestamp": "2026-01-08 22:39:28",
+      "fecha": "2026-01-08",
+      "hora": "22:39:28",
+>>>>>>> tetas
       "origen_ip": "localhost",
       "accion": "SISTEMA_DETENIDO",
       "descripcion": "Central apagada - Limpiando datos temporales",
       "parametros": {}
     },
     {
+<<<<<<< HEAD
       "timestamp": "2026-01-08 22:27:34",
       "fecha": "2026-01-08",
       "hora": "22:27:34",
@@ -58,6 +71,78 @@
         "cp_id": "CP01",
         "motivo": "Alerta de fr\u00edo extremo en Oslo. CPs fuera de servicio."
       }
+=======
+      "timestamp": "2026-01-08 22:35:27",
+      "fecha": "2026-01-08",
+      "hora": "22:35:27",
+      "origen_ip": "localhost",
+      "accion": "KAFKA_INICIADO",
+      "descripcion": "Kafka inicializado en localhost:9092",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:27",
+      "fecha": "2026-01-08",
+      "hora": "22:35:27",
+      "origen_ip": "localhost",
+      "accion": "API_INICIADO",
+      "descripcion": "API_Central iniciado (PID: 24600)",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:25",
+      "fecha": "2026-01-08",
+      "hora": "22:35:25",
+      "origen_ip": "localhost",
+      "accion": "SISTEMA_INICIADO",
+      "descripcion": "Base de datos cargada con 3 CPs",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:24",
+      "fecha": "2026-01-08",
+      "hora": "22:35:24",
+      "origen_ip": "localhost",
+      "accion": "API_DETENIDO",
+      "descripcion": "API_Central detenido correctamente",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:24",
+      "fecha": "2026-01-08",
+      "hora": "22:35:24",
+      "origen_ip": "localhost",
+      "accion": "SISTEMA_DETENIDO",
+      "descripcion": "Central apagada - Limpiando datos temporales",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:12",
+      "fecha": "2026-01-08",
+      "hora": "22:35:12",
+      "origen_ip": "localhost",
+      "accion": "KAFKA_INICIADO",
+      "descripcion": "Kafka inicializado en localhost:9092",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:12",
+      "fecha": "2026-01-08",
+      "hora": "22:35:12",
+      "origen_ip": "localhost",
+      "accion": "API_INICIADO",
+      "descripcion": "API_Central iniciado (PID: 24580)",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 22:35:10",
+      "fecha": "2026-01-08",
+      "hora": "22:35:10",
+      "origen_ip": "localhost",
+      "accion": "SISTEMA_INICIADO",
+      "descripcion": "Base de datos cargada con 3 CPs",
+      "parametros": {}
+>>>>>>> tetas
     }
   ]
 }
