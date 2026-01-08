@@ -276,7 +276,7 @@ def consultar_temperatura_ciudad():
 # Menú principal
 # ============================================================
 def mostrar_menu():
-    print("=================== Weather Control Office ===================")
+    print("\n\n=================== Weather Control Office ===================")
     print("1. Mostrar temperaturas de los CPs")
     print("2. Mostrar temperatura de ciudad")
     print("3. Salir")

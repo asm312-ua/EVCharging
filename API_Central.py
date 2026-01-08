@@ -25,7 +25,7 @@ lock_estado = threading.Lock()
 
 
 # ============================================================
-# Funciones de persistencia
+# Funciones de persistencia - TODO desde basedatos.json
 # ============================================================
 def cargar_datos():
     """Carga TODA la información desde basedatos.json"""
@@ -52,6 +52,7 @@ def cargar_datos():
         estado_sistema['drivers'] = data.get('drivers', {})
         estado_sistema['transacciones'] = data.get('transacciones', [])
         estado_sistema['alertas_climaticas'] = data.get('alertas_climaticas', {})
+        estado_sistema['auditoria'] = data.get('auditoria', [])
         estado_sistema['ultima_actualizacion'] = datetime.now().isoformat()
         
         print(f"[API_Central] Base de datos cargada: {len(estado_sistema['cps'])} CPs")
@@ -60,7 +61,7 @@ def cargar_datos():
 
 
 def guardar_datos():
-    """Guarda todo en basedatos.json"""
+    """Guarda TODO en basedatos.json"""
     try:
         with open(FICHERO_BASE_DATOS, 'w') as f:
             # Solo guardamos cps porque la Central los gestiona
@@ -376,7 +377,8 @@ def get_estado_sistema():
             'cps': estado_sistema['cps'],
             'drivers': estado_sistema['drivers'],
             'transacciones': estado_sistema['transacciones'],
-            'alertas': estado_sistema['alertas_climaticas']
+            'alertas': estado_sistema['alertas_climaticas'],
+            'auditoria': estado_sistema.get('auditoria', [])[:50]  # Últimas 50 entradas
         }), 200
 
 
