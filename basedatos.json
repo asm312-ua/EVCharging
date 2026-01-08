@@ -7,66 +7,34 @@
       "fecha_registro": "2026-01-08T23:27:31.599173",
       "token": "1c8dbc3921043ce2",
       "ip": "192.168.18.127",
-      "ultimo_inicio": "2026-01-08T23:45:46.640688",
+      "ultimo_inicio": "2026-01-08T23:46:33.739748",
       "in_use": false,
       "cmd_port": 6002,
       "precio_kwh": 0.3
     }
   },
-  "drivers": {
-    "driver01": {
-      "driver_id": "driver01",
-      "estado": "cargando",
-      "timestamp": "2026-01-08 23:43:10",
-      "ip": "192.168.18.127"
-    },
-    "hola": {
-      "driver_id": "hola",
-      "estado": "completado",
-      "timestamp": "2026-01-08 23:36:41",
-      "ip": "192.168.18.127"
-    },
-    "patatas": {
-      "driver_id": "patatas",
-      "estado": "cargando",
-      "timestamp": "2026-01-08 23:40:53",
-      "ip": "192.168.18.127"
-    },
-    "driver02": {
-      "driver_id": "driver02",
-      "estado": "completado",
-      "timestamp": "2026-01-08 23:42:53",
-      "ip": "192.168.18.127"
-    }
-  },
-  "transacciones": [
-    {
-      "driver_id": "patatas",
-      "cp_id": "CP02",
-      "inicio": "2026-01-08 23:39:56",
-      "estado": "en_curso"
-    },
-    {
-      "driver_id": "patatas",
-      "cp_id": "CP02",
-      "inicio": "2026-01-08 23:40:21",
-      "estado": "en_curso"
-    },
-    {
-      "driver_id": "patatas",
-      "cp_id": "CP02",
-      "inicio": "2026-01-08 23:40:53",
-      "estado": "en_curso"
-    },
-    {
-      "driver_id": "driver01",
-      "cp_id": "CP02",
-      "inicio": "2026-01-08 23:43:10",
-      "estado": "en_curso"
-    }
-  ],
+  "drivers": {},
+  "transacciones": [],
   "alertas_climaticas": {},
   "auditoria": [
+    {
+      "timestamp": "2026-01-08 23:46:34",
+      "fecha": "2026-01-08",
+      "hora": "23:46:34",
+      "origen_ip": "localhost",
+      "accion": "API_DETENIDO",
+      "descripcion": "API_Central detenido correctamente",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-08 23:46:34",
+      "fecha": "2026-01-08",
+      "hora": "23:46:34",
+      "origen_ip": "localhost",
+      "accion": "SISTEMA_DETENIDO",
+      "descripcion": "Central apagada - Limpiando datos temporales",
+      "parametros": {}
+    },
     {
       "timestamp": "2026-01-08 23:43:10",
       "fecha": "2026-01-08",
