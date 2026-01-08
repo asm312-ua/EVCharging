@@ -203,6 +203,7 @@ def guardar_cps_basedatos(estados_en_memoria):
                 cp_disco['in_use'] = datos_memoria.get('in_use')
                 cp_disco['ip'] = datos_memoria.get('ip')
                 cp_disco['cmd_port'] = datos_memoria.get('cmd_port')
+                cp_disco['ultimo_inicio'] = datetime.now().isoformat()
                 
                 # Si cambiaste precio o ubicación manualmente desde el menú, también se guardan
                 if 'precio_kwh' in datos_memoria:

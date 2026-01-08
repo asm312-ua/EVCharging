@@ -2,56 +2,63 @@ from flask import Flask, request, jsonify
 import secrets
 import json
 import os
-from datetime import datetime  # <--- 1. NUEVO IMPORT
+from datetime import datetime
+from threading import Thread, Lock
+import time
 
 app = Flask(__name__)
+
 REGISTRY_PORT = 8080
 DB_FILE = 'basedatos.json'
 
-def gestionar_token_db(cp_id, ip_actual):
-    # Cargar BBDD
+db_lock = Lock()
+TIMEOUT_CP = 20  # segundos
+
+
+def cargar_db():
     if not os.path.exists(DB_FILE):
-        data = {"cps": {}} # Inicializa estructura básica si no existe
-    else:
-        with open(DB_FILE, 'r') as f:
-            data = json.load(f)
+        return {"cps": {}}
+    with open(DB_FILE, 'r') as f:
+        return json.load(f)
 
-    # Obtenemos la fecha y hora actual
 
-    # Buscar o Crear CP
-    if cp_id not in data['cps']:
-        print(f"[Registry] Registrando NUEVO punto de carga: {cp_id}")
-        data['cps'][cp_id] = {
-            "ubicacion": "Desconocida",
-            "estado": "ACTIVO",
-            "healthy": True,
-            "fecha_registro": datetime.now().isoformat()
-        }
-    
-    # Referencia al CP
-    cp_data = data['cps'][cp_id]
-
-    # Asignar Token si no tiene
-    if 'token' not in cp_data:
-        token_nuevo = secrets.token_hex(8) 
-        cp_data['token'] = token_nuevo
-        print(f"[Registry] Token generado para {cp_id}: {token_nuevo}")
-
-    # Actualizar datos cambiantes (IP y Último Inicio)
-    cp_data['ip'] = ip_actual
-    cp_data['ultimo_inicio'] = datetime.now().isoformat()
-
-    # Guardar cambios
+def guardar_db(data):
     with open(DB_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
-    return cp_data['token']
+
+def gestionar_token_db(cp_id, ip_actual):
+    with db_lock:
+        data = cargar_db()
+
+        if cp_id not in data['cps']:
+            print(f"[Registry] Registrando NUEVO CP: {cp_id}")
+            data['cps'][cp_id] = {
+                "ubicacion": "Desconocida",
+                "estado": "ACTIVO",
+                "healthy": True,
+                "fecha_registro": datetime.now().isoformat()
+            }
+
+        cp_data = data['cps'][cp_id]
+
+        if 'token' not in cp_data:
+            cp_data['token'] = secrets.token_hex(8)
+            print(f"[Registry] Token generado para {cp_id}")
+
+        cp_data['ip'] = ip_actual
+        cp_data['ultimo_inicio'] = datetime.now().isoformat()
+
+        guardar_db(data)
+
+        return cp_data['token']
+
 
 @app.route('/register', methods=['POST'])
 def registrar_cp():
     datos = request.get_json()
     cp_id = datos.get('cp_id')
-    
+
     if not cp_id:
         return jsonify({'error': 'Falta cp_id'}), 400
 
@@ -61,13 +68,54 @@ def registrar_cp():
     return jsonify({
         'status': 'ok',
         'cp_id': cp_id,
-        'token': token 
-    }), 200
+        'token': token
+    })
+
+
+def limpiador_cps():
+    while True:
+        time.sleep(5)  # revisa cada 5 segundos
+
+        with db_lock:
+            data = cargar_db()
+            ahora = datetime.now()
+
+            cps_a_eliminar = []
+
+            for cp_id, cp_data in data['cps'].items():
+                ultimo = cp_data.get('ultimo_inicio')
+                if not ultimo:
+                    continue
+
+                tiempo_cp = datetime.fromisoformat(ultimo)
+                diferencia = (ahora - tiempo_cp).total_seconds()
+
+                if diferencia >= TIMEOUT_CP:
+                    cps_a_eliminar.append(cp_id)
+
+            for cp_id in cps_a_eliminar:
+                print(f"[LIMPIADOR] Eliminando CP inactivo: {cp_id}")
+                del data['cps'][cp_id]
+
+            if cps_a_eliminar:
+                guardar_db(data)
+
 
 if __name__ == '__main__':
-    # Contexto SSL
+    # Hilo limpiador
+    Thread(target=limpiador_cps, daemon=True).start()
+
     try:
-        app.run(host='0.0.0.0', port=REGISTRY_PORT, ssl_context=('server.crt', 'server.key'))
+        app.run(
+            host='0.0.0.0',
+            port=REGISTRY_PORT,
+            threaded=True,
+            ssl_context=('server.crt', 'server.key')
+        )
     except FileNotFoundError:
-        print("AVISO: Sin certificados SSL. Usando HTTP inseguro.")
-        app.run(host='0.0.0.0', port=REGISTRY_PORT)
+        print("AVISO: Sin SSL, usando HTTP")
+        app.run(
+            host='0.0.0.0',
+            port=REGISTRY_PORT,
+            threaded=True
+        )
