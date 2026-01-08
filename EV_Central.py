@@ -149,42 +149,7 @@ def cargar_cps_basedatos():
         print(f"[Central] Error al cargar base de datos: {e}")
         return {}
 
-def guardar_cps_basedatos(estados_en_memoria):
-    archivo = 'basedatos.json'
-    
-    # 1. LEER: Cargamos lo que ya hay en el disco (incluyendo fechas y tokens)
-    if not os.path.exists(archivo):
-        db_disco = {"cps": {}}
-    else:
-        try:
-            with open(archivo, 'r') as f:
-                db_disco = json.load(f)
-        except Exception:
-            db_disco = {"cps": {}}
 
-    # 2. ACTUALIZAR: Modificamos SOLO los campos que cambian en tiempo real
-    #    sin tocar 'fecha_registro', 'ultimo_inicio' o 'token' si no es necesario.
-    for cp_id, datos_memoria in estados_en_memoria.items():
-        
-        # Si el CP no existe en el archivo
-        if cp_id not in db_disco['cps']:
-            db_disco['cps'][cp_id] = datos_memoria
-        else:
-            cp_disco = db_disco['cps'][cp_id]
-            
-            # Actualizamos SOLO lo que gestiona la Central
-            cp_disco['estado'] = datos_memoria.get('estado')
-            cp_disco['healthy'] = datos_memoria.get('healthy')
-            cp_disco['in_use'] = datos_memoria.get('in_use')
-            cp_disco['ip'] = datos_memoria.get('ip')
-            cp_disco['cmd_port'] = datos_memoria.get('cmd_port')
-
-    # 3. GUARDAR: Escribimos la fusión de datos
-    try:
-        with open(archivo, 'w') as f:
-            json.dump(db_disco, f, indent=2)
-    except Exception as e:
-        print(f"[Central] Error escribiendo en disco: {e}")
 def guardar_datos_completos(data_completa):
     """Guarda la estructura completa de la BD"""
     try:
@@ -194,33 +159,67 @@ def guardar_datos_completos(data_completa):
         print(f"[Central] Error al guardar BD: {e}")
 
 
-def guardar_cps_basedatos(data_cps):
-    """Guarda los CPs manteniendo el resto de información intacta"""
+def guardar_cps_basedatos(estados_en_memoria):
+    """
+    Combina la lógica de guardado:
+    1. Lee toda la base de datos (para no perder auditoría ni drivers).
+    2. Actualiza los CPs mezclando datos (para no perder tokens).
+    """
+    # Aseguramos que usamos la variable global del nombre del fichero
+    archivo = FICHERO_BASE_DATOS 
+    
     try:
-        # Leer toda la base de datos
-        if os.path.exists(FICHERO_BASE_DATOS):
-            with open(FICHERO_BASE_DATOS, "r") as f:
+        # --- PASO 1: LEER EL ESTADO ACTUAL DEL DISCO ---
+        if os.path.exists(archivo):
+            with open(archivo, "r") as f:
+                # Cargamos todo (cps, drivers, auditoria, etc.)
                 data_completa = json.load(f)
         else:
+            # Si no existe, creamos la estructura base
             data_completa = {
-                'cps': {},
-                'drivers': {},
-                'transacciones': [],
+                'cps': {}, 
+                'drivers': {}, 
+                'transacciones': [], 
                 'alertas_climaticas': {},
                 'auditoria': []
             }
-        
-        # Si data_cps es solo el dict de CPs, actualizamos solo esa sección
-        if isinstance(data_cps, dict) and not any(k in data_cps for k in ['drivers', 'transacciones', 'alertas_climaticas']):
-            data_completa['cps'] = data_cps
-        else:
-            # Si es la estructura completa, guardamos todo
-            data_completa = data_cps
-        
-        with open(FICHERO_BASE_DATOS, "w") as f:
+
+        # Referencia directa a la sección de CPs del disco
+        db_cps = data_completa.get('cps', {})
+
+        # --- PASO 2: MERGE INTELIGENTE (MEMORIA -> DISCO) ---
+        for cp_id, datos_memoria in estados_en_memoria.items():
+            
+            if cp_id not in db_cps:
+                # CASO A: Es un CP nuevo que no estaba en disco -> Lo guardamos todo
+                db_cps[cp_id] = datos_memoria
+            else:
+                # CASO B: El CP ya existe -> Actualizamos SOLO lo volátil
+                # Esto protege el 'token' y la 'fecha_registro' que están en disco
+                cp_disco = db_cps[cp_id]
+                
+                cp_disco['estado'] = datos_memoria.get('estado')
+                cp_disco['healthy'] = datos_memoria.get('healthy')
+                cp_disco['in_use'] = datos_memoria.get('in_use')
+                cp_disco['ip'] = datos_memoria.get('ip')
+                cp_disco['cmd_port'] = datos_memoria.get('cmd_port')
+                
+                # Si cambiaste precio o ubicación manualmente desde el menú, también se guardan
+                if 'precio_kwh' in datos_memoria:
+                    cp_disco['precio_kwh'] = datos_memoria['precio_kwh']
+                if 'ubicacion' in datos_memoria:
+                    cp_disco['ubicacion'] = datos_memoria['ubicacion']
+
+        # Actualizamos la sección de CPs en la estructura completa
+        data_completa['cps'] = db_cps
+
+        # --- PASO 3: GUARDAR EN DISCO ---
+        with open(archivo, "w") as f:
             json.dump(data_completa, f, indent=2)
+            
     except Exception as e:
-        print(f"[Central] Error al guardar base de datos: {e}")
+        print(f"[Central] Error crítico al guardar base de datos: {e}")
+
 
 def limpiar_datos_temporales():
     """Limpia drivers, transacciones, alertas y auditoría al cerrar"""
@@ -243,6 +242,7 @@ def limpiar_datos_temporales():
         print("[Central] ✓ Datos temporales limpiados (drivers, transacciones, alertas)")
     except Exception as e:
         print(f"[Central] Error al limpiar datos temporales: {e}")
+
 
 def actualizar_drivers(driver_id, estado, origen_ip='unknown'):
     """Actualiza el estado de un driver en la base de datos"""
@@ -451,7 +451,6 @@ def manejar_estado_cp(conn, addr):
                                 "estado": "DESCONECTADO",
                                 "healthy": False,
                                 "in_use": False,
-                                "token": '00000'
                             }
                             
                             # Auditoría de registro
@@ -471,7 +470,28 @@ def manejar_estado_cp(conn, addr):
                         estados_cp[cp_id]['in_use'] = state.get('in_use', False)
                         estados_cp[cp_id]['ip'] = state.get('ip', origen_ip)
                         estados_cp[cp_id]['cmd_port'] = state.get('cmd_port')
+                        estados_cp[cp_id]['token'] = state.get('token')
+                        
+                        # Auditoría de cambio de estado significativo
+                        if estado_anterior != estados_cp[cp_id]['estado']:
+                            registrar_auditoria(
+                                origen_ip,
+                                'CAMBIO_ESTADO_CP',
+                                f'CP {cp_id}: {estado_anterior} → {estados_cp[cp_id]["estado"]}',
+                                {'cp_id': cp_id, 'estado_anterior': estado_anterior, 'estado_nuevo': estados_cp[cp_id]['estado']}
+                            )
+                        
+                        if healthy_anterior != estados_cp[cp_id]['healthy']:
+                            accion = 'CP_SALUDABLE' if estados_cp[cp_id]['healthy'] else 'CP_NO_SALUDABLE'
+                            registrar_auditoria(
+                                origen_ip,
+                                accion,
+                                f'CP {cp_id} cambió healthy: {healthy_anterior} → {estados_cp[cp_id]["healthy"]}',
+                                {'cp_id': cp_id, 'healthy': estados_cp[cp_id]['healthy']}
+                            )
+                        
                         guardar_cps_basedatos(estados_cp)
+                        
                 except Exception as e:
                     print(f"[Central] Error procesando estado: {e}")
                     registrar_auditoria(origen_ip, 'ERROR_PROCESO_ESTADO', f'Error procesando estado de CP: {e}')
@@ -504,9 +524,16 @@ def enviar_orden(cp_id, action):
 
     try:
         with socket.create_connection((info['ip'], info['cmd_port']), timeout=3) as s:
-            s.sendall(json.dumps({'cp_id': cp_id, 'action': action}).encode('utf-8'))
-            resp = s.recv(1024)
-            print(f"[Central] Respuesta de {cp_id}: {resp.decode('utf-8')}")
+            # --- CAMBIO AQUÍ: Encriptar envío ---
+            payload = {'cp_id': cp_id, 'action': action}
+            msg_encriptado = encriptar_mensaje(payload)
+            s.sendall((msg_encriptado + '\n').encode('utf-8')) # Importante añadir \n
+            # ------------------------------------
+
+            # Esperar respuesta (ACK) que también vendrá encriptada
+            resp_b64 = s.recv(1024)
+            resp_dict = desencriptar_mensaje(resp_b64.decode('utf-8'))
+            print(f"[Central] Respuesta de {cp_id}: {resp_dict}")
     except Exception as e:
         print(f"[Central] Error al enviar orden a {cp_id}: {e}")
         registrar_auditoria(info.get('ip', 'unknown'), 'ERROR_ENVIO_ORDEN', f'Error enviando orden a {cp_id}: {e}')

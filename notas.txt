@@ -17,5 +17,4 @@ docker compose exec kafka bash
 SI da fallo kafka reinstalamos de 0 por si esta corrupto:
 pip install --force-reinstall --no-cache-dir confluent-kafka
 
-
-source evcharging_env/bin/activate
+pip install flask flask-cors confluent-kafka cryptography requests
