@@ -9,7 +9,7 @@ from datetime import datetime
 # Configuración
 # ============================================================
 API_KEY = "2de671acf516add68c98a4a5b5c039d9"  # Tu API key de OpenWeather
-URL_API_CENTRAL = None
+URL_API_CENTRAL = "http://localhost:5000"
 INTERVALO_CONSULTA = 4
 
 # Umbrales de temperatura
@@ -318,13 +318,6 @@ def menu_principal():
 # ============================================================
 def main():
     global api_conectado
-    if len(sys.argv) == 2:
-        broker = sys.argv[1]
-    else:
-        print("ERROR: Parámetros incorrectos")
-        print("Debes poner: EV_W.py IP_Central:5000")
-
-    URL_API_CENTRAL = f"http://{broker}"
     
     print("Iniciando [EV_W]")
     print("Configuración actual: ")
