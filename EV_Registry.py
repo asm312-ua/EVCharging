@@ -74,7 +74,7 @@ def registrar_cp():
 
 def limpiador_cps():
     while True:
-        time.sleep(30)  # revisa cada 30 segundos
+        time.sleep(5)  # revisa cada 5 segundos
 
         with db_lock:
             data = cargar_db()

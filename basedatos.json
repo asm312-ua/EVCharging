@@ -4,19 +4,168 @@
       "ubicacion": "Desconocida",
       "estado": "ACTIVO",
       "healthy": true,
-      "fecha_registro": "2026-01-08T23:27:31.599173",
-      "token": "1c8dbc3921043ce2",
+      "fecha_registro": "2026-01-09T17:18:58.647403",
+      "token": "90c90fe52b701eb0",
       "ip": "192.168.18.127",
-      "ultimo_inicio": "2026-01-08T23:46:33.739748",
+      "ultimo_inicio": "2026-01-09T17:20:52.897671",
       "in_use": false,
       "cmd_port": 6002,
       "precio_kwh": 0.3
     }
   },
-  "drivers": {},
+  "drivers": {
+    "driver01": {
+      "driver_id": "driver01",
+      "estado": "completado",
+      "timestamp": "2026-01-09 17:19:21",
+      "ip": "192.168.18.127"
+    },
+    "driver02": {
+      "driver_id": "driver02",
+      "estado": "completado",
+      "timestamp": "2026-01-09 17:19:47",
+      "ip": "192.168.18.127"
+    }
+  },
   "transacciones": [],
   "alertas_climaticas": {},
   "auditoria": [
+    {
+      "timestamp": "2026-01-09 17:19:47",
+      "fecha": "2026-01-09",
+      "hora": "17:19:47",
+      "origen_ip": "192.168.18.127",
+      "accion": "CAMBIO_ESTADO_DRIVER",
+      "descripcion": "Driver driver02 cambi\u00f3 a estado: completado",
+      "parametros": {
+        "driver_id": "driver02",
+        "nuevo_estado": "completado"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:19:39",
+      "fecha": "2026-01-09",
+      "hora": "17:19:39",
+      "origen_ip": "192.168.18.127",
+      "accion": "CAMBIO_ESTADO_DRIVER",
+      "descripcion": "Driver driver02 cambi\u00f3 a estado: cargando",
+      "parametros": {
+        "driver_id": "driver02",
+        "nuevo_estado": "cargando"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:19:39",
+      "fecha": "2026-01-09",
+      "hora": "17:19:39",
+      "origen_ip": "kafka",
+      "accion": "CAMBIO_ESTADO_DRIVER",
+      "descripcion": "Driver driver02 cambi\u00f3 a estado: solicitando_carga",
+      "parametros": {
+        "driver_id": "driver02",
+        "nuevo_estado": "solicitando_carga"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:19:21",
+      "fecha": "2026-01-09",
+      "hora": "17:19:21",
+      "origen_ip": "192.168.18.127",
+      "accion": "CAMBIO_ESTADO_DRIVER",
+      "descripcion": "Driver driver01 cambi\u00f3 a estado: completado",
+      "parametros": {
+        "driver_id": "driver01",
+        "nuevo_estado": "completado"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:19:13",
+      "fecha": "2026-01-09",
+      "hora": "17:19:13",
+      "origen_ip": "192.168.18.127",
+      "accion": "CAMBIO_ESTADO_DRIVER",
+      "descripcion": "Driver driver01 cambi\u00f3 a estado: cargando",
+      "parametros": {
+        "driver_id": "driver01",
+        "nuevo_estado": "cargando"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:19:13",
+      "fecha": "2026-01-09",
+      "hora": "17:19:13",
+      "origen_ip": "kafka",
+      "accion": "CAMBIO_ESTADO_DRIVER",
+      "descripcion": "Driver driver01 cambi\u00f3 a estado: solicitando_carga",
+      "parametros": {
+        "driver_id": "driver01",
+        "nuevo_estado": "solicitando_carga"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:18:58",
+      "fecha": "2026-01-09",
+      "hora": "17:18:58",
+      "origen_ip": "127.0.0.1",
+      "accion": "CP_SALUDABLE",
+      "descripcion": "CP CP02 cambi\u00f3 healthy: False \u2192 True",
+      "parametros": {
+        "cp_id": "CP02",
+        "healthy": true
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:18:58",
+      "fecha": "2026-01-09",
+      "hora": "17:18:58",
+      "origen_ip": "127.0.0.1",
+      "accion": "CAMBIO_ESTADO_CP",
+      "descripcion": "CP CP02: DESCONECTADO \u2192 ACTIVO",
+      "parametros": {
+        "cp_id": "CP02",
+        "estado_anterior": "DESCONECTADO",
+        "estado_nuevo": "ACTIVO"
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:18:58",
+      "fecha": "2026-01-09",
+      "hora": "17:18:58",
+      "origen_ip": "127.0.0.1",
+      "accion": "CP_REGISTRADO",
+      "descripcion": "Nuevo CP registrado: CP02",
+      "parametros": {
+        "cp_id": "CP02",
+        "healthy": true
+      }
+    },
+    {
+      "timestamp": "2026-01-09 17:17:40",
+      "fecha": "2026-01-09",
+      "hora": "17:17:40",
+      "origen_ip": "localhost",
+      "accion": "KAFKA_INICIADO",
+      "descripcion": "Kafka inicializado en 127.0.0.1:9092",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-09 17:17:40",
+      "fecha": "2026-01-09",
+      "hora": "17:17:40",
+      "origen_ip": "localhost",
+      "accion": "API_INICIADO",
+      "descripcion": "API_Central iniciado (PID: 47421)",
+      "parametros": {}
+    },
+    {
+      "timestamp": "2026-01-09 17:17:38",
+      "fecha": "2026-01-09",
+      "hora": "17:17:38",
+      "origen_ip": "localhost",
+      "accion": "SISTEMA_INICIADO",
+      "descripcion": "Base de datos cargada con 0 CPs",
+      "parametros": {}
+    },
     {
       "timestamp": "2026-01-08 23:46:34",
       "fecha": "2026-01-08",

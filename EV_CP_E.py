@@ -75,7 +75,7 @@ def encriptar_mensaje(diccionario):
 
 # En EV_CP_E.py (y recomendable en EV_Central.py también)
 
-ef desencriptar_mensaje(b64_str):
+def desencriptar_mensaje(b64_str):
 
     try:
         if not b64_str: 
