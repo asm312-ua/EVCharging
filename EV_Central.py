@@ -752,7 +752,7 @@ def menu_central():
 # ============================================================
 # KAFKA: funciones auxiliares
 # ============================================================
-def enviar_respuesta_kafka(producer, driver_id, cp_id, estado, status, precio_kwh=None):
+def enviar_respuesta_kafka(producer, driver_id, cp_id, estado, status, precio_kwh=None, encriptado=True):
     if producer is None: return
 
     payload = {
@@ -766,7 +766,9 @@ def enviar_respuesta_kafka(producer, driver_id, cp_id, estado, status, precio_kw
         payload['precio_kwh'] = precio_kwh
         
     try:
-        msg_cifrado = encriptar_mensaje(payload)
+        if encriptado:
+            msg_cifrado = encriptar_mensaje(payload)
+        
         
         # Enviamos al topic de respuestas
         producer.produce(TOPIC_RESPUESTAS, key=driver_id, value=msg_cifrado.encode('utf-8'))
