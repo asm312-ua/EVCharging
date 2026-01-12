@@ -224,8 +224,8 @@ def manejar_comando_central(conn: socket.socket, addr):
                     if action == 'activate':
                         central_override = 'activate'
                     elif action == 'errorlog':
-                        print(f"[Monitor {CP_ID}] Error Auth. Durmiendo...")
-                        central_override = 'sleep'
+                        print(f"[Monitor {CP_ID}] Error Auth. Volviendo a pedir credenciales.")
+                        obtener_credenciales()
                     elif action in ('sleep', 'off'):
                         central_override = 'sleep'
                     elif action in ('clear', 'none', ''):
