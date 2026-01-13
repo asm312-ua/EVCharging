@@ -48,13 +48,13 @@ def desencriptar_mensaje(b64_str):
 # ============================================================
 DB_FILE = 'basedatos.json'
 
-CENTRAL_HOST = 'localhost'
+CENTRAL_HOST = '172.21.243.234'
 CENTRAL_PORT_ESTADOS = 6000
 CENTRAL_PORT_SOLICITUDES = 6001
 SOCKET_BUFFER = 8192
 
 # Kafka topics
-KAFKA_BROKER = sys.argv[1] if len(sys.argv) > 1 else 'localhost:9092'
+KAFKA_BROKER = sys.argv[1] if len(sys.argv) > 1 else '172.21.243.234:9092'
 TOPIC_SOLICIT_DRIVER = 'solicitudes_driver'
 TOPIC_SOLICIT_CP = 'peticiones_carga'
 TOPIC_SOLICIT_ENGINE = 'peticiones_engine'
@@ -484,7 +484,7 @@ def manejar_estado_cp(conn, addr):
                         estado_anterior = estados_cp[cp_id].get('estado')
                         healthy_anterior = estados_cp[cp_id].get('healthy')
                         
-                        estados_cp[cp_id]['estado'] = "ACTIVO" if state.get('healthy', False) else "DESCONECTADO"
+                        estados_cp[cp_id]['estado'] = "ACTIVO" if state.get('healthy', False) and state.get('action_sent') != 'sleep' else "DESCONECTADO"
                         estados_cp[cp_id]['healthy'] = state.get('healthy', False)
                         estados_cp[cp_id]['in_use'] = state.get('in_use', False)
                         estados_cp[cp_id]['ip'] = state.get('ip', origen_ip)
@@ -569,7 +569,6 @@ def enviar_orden(cp_id, action):
                     else:
                         print(f"[Central] ACK corrupto de {cp_id}")
                     break # Ya tenemos respuesta, salimos
-
     except socket.timeout:
         print(f"[Central] Timeout esperando respuesta de {cp_id}")
     except ConnectionRefusedError:
@@ -613,7 +612,7 @@ def verificar_alertas_climaticas():
                             print(f"[Central] ⚠️ Alerta detectada para {cp_id} en {ubicacion}")
                             
                             # Actualizamos memoria
-                            estados_cp[cp_id]['estado'] = 'FUERA_DE_SERVICIO'
+                            estados_cp[cp_id]['estado'] = 'sleep'
                             estados_cp[cp_id]['alerta_activa'] = True
                             
                             # Encolamos tareas
@@ -636,7 +635,8 @@ def verificar_alertas_climaticas():
                         
                         # Restauramos estado
                         es_healthy = cp_info.get('healthy', False)
-                        estados_cp[cp_id]['estado'] = 'ACTIVO' if es_healthy else 'DESCONECTADO'
+                        action = cp_info.get('action_send')
+                        estados_cp[cp_id]['estado'] = 'ACTIVO' if es_healthy and action != 'sleep' else 'DESCONECTADO'
                         estados_cp[cp_id]['alerta_activa'] = False
                         
                         # Encolamos tareas

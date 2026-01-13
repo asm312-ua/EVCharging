@@ -12,14 +12,21 @@ REGISTRY_PORT = 8080
 DB_FILE = 'basedatos.json'
 
 db_lock = Lock()
-TIMEOUT_CP = 20  # segundos
-
+TIMEOUT_CP = 40  # segundos
 
 def cargar_db():
     if not os.path.exists(DB_FILE):
         return {"cps": {}}
-    with open(DB_FILE, 'r') as f:
-        return json.load(f)
+
+    try:
+        with open(DB_FILE, 'r') as f:
+            contenido = f.read().strip()
+            if not contenido:
+                return {"cps": {}}
+            return json.loads(contenido)
+    except json.JSONDecodeError:
+        print("[Registry] JSON corrupto o en escritura, reintentando...")
+        return {"cps": {}}
 
 
 def guardar_db(data):

@@ -267,9 +267,9 @@ def servidor_comandos():
 # Bucle principal
 # ============================================================
 def main():
-    if not obtener_credenciales():
+    while not obtener_credenciales():
         print("No se puede iniciar sin token del Registry.")
-        sys.exit(1)
+        time.sleep(2)
 
 
     print(f"[Monitor {CP_ID}] Iniciado con central_override={central_override}")
